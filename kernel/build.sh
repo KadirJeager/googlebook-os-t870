@@ -94,6 +94,17 @@ BT_PATH="$IS/build-tools/path"
 
 hata() { echo "HATA: $*" >&2; exit 1; }
 bilgi() { echo ">> $*" >&2; }
+# Bir ağ kopması (zaman aşımı, mobil bağlantı) indirmeyi tek denemede düşürmesin: komut en çok
+# dört kez denenir. Denenen komut kendi yarım çıktısını baştan yazar.
+yeniden_dene() {
+	local n=1
+	until "$@"; do
+		[ "$n" -ge 4 ] && return 1
+		bilgi "indirme başarısız, yeniden deneniyor ($n/3)"
+		sleep $((n * 15))
+		n=$((n + 1))
+	done
+}
 
 # LineageOS'un boot imajı: çalışma dizininin kurulduğu LineageOS zip'inden (../lineage-zip.py,
 # sha256'sı lineage-hazirla.py'nin kaydıyla denetlenir). Kernelinin sürüm dizesindeki commit
@@ -123,11 +134,22 @@ kaynak_kernel() {
 	fi
 	if ! git -C "$SRC" cat-file -e "$KERNEL_COMMIT^{commit}" 2>/dev/null; then
 		bilgi "kernel kaynağı indiriliyor ($KERNEL_COMMIT, sığ)"
-		git -C "$SRC" fetch -q --depth 1 origin "$KERNEL_COMMIT"
+		yeniden_dene git -C "$SRC" fetch -q --depth 1 origin "$KERNEL_COMMIT" \
+			|| hata "kernel kaynağı indirilemedi ($KERNEL_DEPO)"
 	fi
 	# git commit kimliği içeriğin SHA-1 özetidir: aynı kimlik aynı ağaç demektir.
 	[ "$(git -C "$SRC" rev-parse "$KERNEL_COMMIT^{commit}")" = "$KERNEL_COMMIT" ] \
 		|| hata "kernel commit doğrulanamadı"
+}
+
+clang_indir() {
+	rm -rf "$CLANG/$1"
+	mkdir -p "$CLANG/$1"
+	curl -sSfL "$AOSP/$CLANG_YOL/$1.tar.gz" | tar xz -C "$CLANG/$1"
+}
+
+buildtool_indir() {
+	curl -sSfL "$AOSP/$BT_KOK/linux-x86/bin/$1?format=TEXT" | base64 -d > "$BT/$1.tmp"
 }
 
 kaynak_clang() {
@@ -138,10 +160,9 @@ kaynak_clang() {
 			&& [ "$(cat "$CLANG/.$d.dogrulandi")" = "$beklenen" ]; then
 			continue
 		fi
-		rm -rf "$CLANG/$d" "$CLANG/.$d.dogrulandi"
-		mkdir -p "$CLANG/$d"
+		rm -f "$CLANG/.$d.dogrulandi"
 		bilgi "clang-r563880c/$d indiriliyor"
-		curl -sSfL "$AOSP/$CLANG_YOL/$d.tar.gz" | tar xz -C "$CLANG/$d"
+		yeniden_dene clang_indir "$d" || hata "clang $d indirilemedi"
 		agac=$(python3 -I "$BURASI/araclar/git-agac.py" "$CLANG/$d")
 		[ "$agac" = "$beklenen" ] || hata "clang $d ağacı $agac, beklenen $beklenen"
 		echo "$agac" > "$CLANG/.$d.dogrulandi"
@@ -156,7 +177,7 @@ kaynak_buildtools() {
 	for ad in "${!BT_BLOB[@]}"; do
 		if [ ! -x "$BT/$ad" ] || [ "$(git hash-object "$BT/$ad")" != "${BT_BLOB[$ad]}" ]; then
 			bilgi "build-tools/$ad indiriliyor"
-			curl -sSfL "$AOSP/$BT_KOK/linux-x86/bin/$ad?format=TEXT" | base64 -d > "$BT/$ad.tmp"
+			yeniden_dene buildtool_indir "$ad" || hata "build-tools/$ad indirilemedi"
 			chmod +x "$BT/$ad.tmp"
 			mv "$BT/$ad.tmp" "$BT/$ad"
 		fi

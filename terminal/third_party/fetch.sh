@@ -48,7 +48,7 @@ check() {  # check WHAT EXPECTED ACTUAL
 }
 
 echo "== termux-app $TERMUX_COMMIT"
-curl -fsSL -o "$work/termux.tar.gz" \
+curl -fsSL --retry 3 --retry-all-errors --retry-delay 15 -o "$work/termux.tar.gz" \
     "https://codeload.github.com/termux/termux-app/tar.gz/$TERMUX_COMMIT"
 mkdir "$work/termux"
 tar -xzf "$work/termux.tar.gz" -C "$work/termux" --strip-components=1 \
@@ -62,17 +62,17 @@ echo "$TERMUX_COMMIT" > "$HERE/termux/COMMIT"
 
 echo "== nlohmann/json $NLOHMANN_VERSION"
 mkdir -p "$HERE/nlohmann"
-curl -fsSL -o "$work/json.hpp" \
+curl -fsSL --retry 3 --retry-all-errors --retry-delay 15 -o "$work/json.hpp" \
     "https://github.com/nlohmann/json/releases/download/$NLOHMANN_VERSION/json.hpp"
 check json.hpp "$NLOHMANN_SHA256" "$(sha256sum "$work/json.hpp" | cut -d' ' -f1)"
 mv "$work/json.hpp" "$HERE/nlohmann/json.hpp"
-curl -fsSL -o "$HERE/nlohmann/LICENSE.MIT" \
+curl -fsSL --retry 3 --retry-all-errors --retry-delay 15 -o "$HERE/nlohmann/LICENSE.MIT" \
     "https://raw.githubusercontent.com/nlohmann/json/$NLOHMANN_VERSION/LICENSE.MIT"
 
 echo "== androidx.annotation $ANDROIDX_ANNOTATION_VERSION"
 mkdir -p "$HERE/androidx"
 jar="annotation-jvm-$ANDROIDX_ANNOTATION_VERSION.jar"
-curl -fsSL -o "$work/$jar" \
+curl -fsSL --retry 3 --retry-all-errors --retry-delay 15 -o "$work/$jar" \
     "https://dl.google.com/android/maven2/androidx/annotation/annotation-jvm/$ANDROIDX_ANNOTATION_VERSION/$jar"
 check "$jar" "$ANDROIDX_ANNOTATION_SHA256" "$(sha256sum "$work/$jar" | cut -d' ' -f1)"
 rm -f "$HERE"/androidx/annotation-jvm-*.jar
@@ -81,9 +81,9 @@ mv "$work/$jar" "$HERE/androidx/$jar"
 echo "== docker-systemctl-replacement $SYSTEMCTL_VERSION"
 mkdir -p "$HERE/systemctl"
 base="https://raw.githubusercontent.com/gdraheim/docker-systemctl-replacement/$SYSTEMCTL_COMMIT"
-curl -fsSL -o "$work/systemctl3.py" "$base/files/docker/systemctl3.py"
+curl -fsSL --retry 3 --retry-all-errors --retry-delay 15 -o "$work/systemctl3.py" "$base/files/docker/systemctl3.py"
 check systemctl3.py "$SYSTEMCTL_SHA256" "$(sha256sum "$work/systemctl3.py" | cut -d' ' -f1)"
-curl -fsSL -o "$work/EUPL-LICENSE.md" "$base/EUPL-LICENSE.md"
+curl -fsSL --retry 3 --retry-all-errors --retry-delay 15 -o "$work/EUPL-LICENSE.md" "$base/EUPL-LICENSE.md"
 check EUPL-LICENSE.md "$SYSTEMCTL_LICENSE_SHA256" "$(sha256sum "$work/EUPL-LICENSE.md" | cut -d' ' -f1)"
 mv "$work/systemctl3.py" "$work/EUPL-LICENSE.md" "$HERE/systemctl/"
 echo "$SYSTEMCTL_COMMIT" > "$HERE/systemctl/COMMIT"
@@ -93,7 +93,7 @@ mkdir -p "$HERE/debian"
 for arch in arm64 amd64; do
     deb="bindfs_${BINDFS_VERSION}_$arch.deb"
     want=BINDFS_${arch^^}_SHA256
-    curl -fsSL -o "$work/$deb" \
+    curl -fsSL --retry 3 --retry-all-errors --retry-delay 15 -o "$work/$deb" \
         "https://snapshot.debian.org/archive/debian/$BINDFS_SNAPSHOT/pool/main/b/bindfs/$deb"
     check "$deb" "${!want}" "$(sha256sum "$work/$deb" | cut -d' ' -f1)"
     mv "$work/$deb" "$HERE/debian/$deb"

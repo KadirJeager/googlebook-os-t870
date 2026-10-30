@@ -1,6 +1,5 @@
 # T870-araclar files the image pipeline read in one run (kit-uret.py denetle).
 # Generated; review the diff before committing.
-LineageOS-24.0-gts7lwifi/lineage-24.0-20261011-nightly-gts7lwifi-signed.zip
 apply_patches.py
 dogal-yon/hal/araclar/denetim.py
 dogal-yon/hal/araclar/sistem-kutuphaneleri.py
@@ -36,11 +35,6 @@ kamera-jpeg/stubs/android/hardware/camera2/utils/OutputAndInputStreamIds.java
 kamera-jpeg/stubs/android/hardware/camera2/utils/SessionConfigurationAndStreamIds.java
 kamera-jpeg/stubs/android/hardware/camera2/utils/SubmitInfo.java
 kamera-jpeg/stubs/android/hardware/camera2/utils/SurfaceUtils.java
-mica-imaj/16471258_CL3B.260622.273.R1/kaynak.json
-mica-imaj/16471258_CL3B.260622.273.R1/product_a.erofs
-mica-imaj/16471258_CL3B.260622.273.R1/system_a.erofs
-mica-imaj/16471258_CL3B.260622.273.R1/system_ext_a.erofs
-mica-imaj/16471258_CL3B.260622.273.R1/vendor_a.erofs
 mica-servisleri/out/STAMP
 mica-servisleri/out/gbos-vpd-executor
 mica-servisleri/stamp.sh

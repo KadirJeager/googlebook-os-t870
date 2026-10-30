@@ -130,9 +130,11 @@ def denetle(args):
 
 
 def per_checkout(rel):
-    """The super headers and their sums are recorded per checkout (uret.py yakala), so the
-    content list never names them."""
-    return rel.startswith("super-baslik/") and (rel.endswith(".bin.xz") or rel.endswith("SHA256SUMS"))
+    """What differs from checkout to checkout never goes into the content list: the super headers
+    and their sums (uret.py yakala) and the inputs the tablet has itself (EXCLUDE_PREFIXES: the
+    downloaded release, the LineageOS zip)."""
+    return (rel.startswith("super-baslik/") and (rel.endswith(".bin.xz") or rel.endswith("SHA256SUMS"))
+            or rel.startswith(EXCLUDE_PREFIXES))
 
 
 def icerik_from_record(kayit):

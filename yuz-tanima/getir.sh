@@ -44,7 +44,7 @@ check() {  # check WHAT EXPECTED ACTUAL
 }
 
 echo "== packages_apps_FaceUnlock $FACEUNLOCK_COMMIT"
-curl -fsSL -o "$work/faceunlock.tar.gz" \
+curl -fsSL --retry 3 --retry-all-errors --retry-delay 15 -o "$work/faceunlock.tar.gz" \
     "https://codeload.github.com/Evolution-X/packages_apps_FaceUnlock/tar.gz/$FACEUNLOCK_COMMIT"
 mkdir "$work/FaceUnlock"
 tar -xzf "$work/faceunlock.tar.gz" -C "$work/FaceUnlock" --strip-components=1
@@ -58,7 +58,7 @@ mv "$work/FaceUnlock" "$HERE/FaceUnlock"
 mkdir -p "$HERE/tools"
 
 echo "== kotlinc $KOTLIN_VERSION"
-curl -fsSL -o "$work/kotlin.zip" \
+curl -fsSL --retry 3 --retry-all-errors --retry-delay 15 -o "$work/kotlin.zip" \
     "https://github.com/JetBrains/kotlin/releases/download/v$KOTLIN_VERSION/kotlin-compiler-$KOTLIN_VERSION.zip"
 check kotlinc "$KOTLIN_SHA256" "$(sha256sum "$work/kotlin.zip" | cut -d' ' -f1)"
 unzip -q "$work/kotlin.zip" -d "$work/kotlin"
@@ -66,7 +66,7 @@ rm -rf "$HERE/tools/kotlinc"
 mv "$work/kotlin/kotlinc" "$HERE/tools/kotlinc"
 
 echo "== dex2jar $DEX2JAR_VERSION"
-curl -fsSL -o "$work/dex2jar.zip" \
+curl -fsSL --retry 3 --retry-all-errors --retry-delay 15 -o "$work/dex2jar.zip" \
     "https://github.com/pxb1988/dex2jar/releases/download/v$DEX2JAR_VERSION/dex-tools-v$DEX2JAR_VERSION.zip"
 check dex2jar "$DEX2JAR_SHA256" "$(sha256sum "$work/dex2jar.zip" | cut -d' ' -f1)"
 unzip -q "$work/dex2jar.zip" -d "$work/dex2jar"

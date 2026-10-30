@@ -77,6 +77,14 @@ class Contents(unittest.TestCase):
         missing = [f for f in kit.read_icerik() if not os.path.isfile(os.path.join(TOOLS_DIR, f))]
         self.assertEqual(missing, [])
 
+    def test_icerik_names_nothing_per_checkout(self):
+        """A user with another release or LineageOS zip, or without the author's headers, has
+        the same content list (H, 31 Oct: the list named the author's .273 partitions)."""
+        kit = load_kit()
+        if not os.path.isfile(kit.ICERIK):
+            self.skipTest("icerik.txt not generated yet (kit-uret.py denetle)")
+        self.assertEqual([f for f in kit.read_icerik() if kit.per_checkout(f)], [])
+
     def test_stamped_sources_in_kit(self):
         kit = load_kit()
         if not os.path.isfile(kit.ICERIK):

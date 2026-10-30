@@ -47,3 +47,9 @@ super-baslik/lineage.bin.xz
 super-baslik/SHA256SUMS
 mica-imaj/guncel
 mica-imaj/*/indir.log
+# what mica-indir.py writes for each release it downloads (partial images while it runs)
+mica-imaj/*/layout.json
+mica-imaj/*/kaynak.json
+*.erofs.part
+# what terminal/third_party/fetch.sh downloads at build time (the author's copies are tracked)
+terminal/third_party/debian/
