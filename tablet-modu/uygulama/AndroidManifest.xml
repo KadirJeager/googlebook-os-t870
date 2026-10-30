@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- "Tablet modu": a quick settings tile that tells the kernel to treat an open Book Cover
+     Keyboard as folded back (kernel patch 0002, sec_keypad/tablet_mode). The keyboard MCU cannot
+     tell a cover standing behind the screen at an angle from the laptop position; with the tile
+     on, the keyboard and touchpad leave and mica switches to its tablet layout exactly as when
+     the cover is folded flat behind the screen. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.gbos.tabletmodu">
+
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <application
+        android:label="@string/uygulama_adi"
+        android:icon="@drawable/ic_tablet_modu"
+        android:allowBackup="false"
+        android:supportsRtl="true"
+        android:defaultToDeviceProtectedStorage="true"
+        android:directBootAware="true">
+
+        <!-- Enabled by AcilisAlicisi only when the running kernel has the switch, so the tile
+             never shows on a kernel that cannot honour it. -->
+        <service
+            android:name=".TabletModuKutucugu"
+            android:label="@string/kutucuk_adi"
+            android:icon="@drawable/ic_tablet_modu"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.TOGGLEABLE_TILE"
+                android:value="true" />
+        </service>
+
+        <receiver
+            android:name=".AcilisAlicisi"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

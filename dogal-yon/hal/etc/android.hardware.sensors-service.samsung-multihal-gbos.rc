@@ -1,0 +1,29 @@
+# Googlebook OS on SM-T870: the tablet's sensors multi-HAL with the sensor axes re-expressed for
+# the landscape natural orientation (T870-araclar/dogal-yon/hal, yamalar/dogal_yon_hal.py).
+#
+# It replaces the LineageOS vendor service vendor.sensors-hal-multihal
+# (/vendor/etc/init/android.hardware.sensors-service.samsung-multihal.rc). An "override" cannot
+# do that from /product: init refuses to override a service "across the treble boundary" (vendor
+# and odm files are parsed in the vendor_init subcontext, product files are not;
+# system/core/init/service_parser.cpp EndSection). Instead the vendor service is stopped before
+# its class starts ("stop" on a service that has not started yet keeps class_start from starting
+# it, init/service.cpp StopOrReset) and this one serves ISensors/default in its place, with the
+# same class, user, groups, capabilities, task profile and limits.
+
+on early-init
+    stop vendor.sensors-hal-multihal
+
+service gbos.sensors-hal-multihal /product/bin/hw/android.hardware.sensors-service.samsung-multihal-gbos
+    class hal
+    user system
+    group system wakelock context_hub input uhid
+    task_profiles ServiceCapacityLow
+    capabilities BLOCK_SUSPEND
+    rlimit rtprio 10 10
+
+# vndservicemanager restarts the whole hal class when it restarts ("onrestart class_restart hal",
+# without --only-enabled), which starts the stopped vendor service too. Its registration of
+# ISensors/default would replace this one; stop it again and register this one anew.
+on property:init.svc.vendor.sensors-hal-multihal=running
+    stop vendor.sensors-hal-multihal
+    restart gbos.sensors-hal-multihal

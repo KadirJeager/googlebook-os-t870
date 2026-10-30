@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.gbos.terminal">
+
+    <!-- Linux processes run with this app's uid: their network access is this app's. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- ~/android in Linux is Android's shared storage, accessed with this app's identity. -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <!-- Suggests the Android user's name as the Linux user name. -->
+    <uses-permission android:name="android.permission.QUERY_USERS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- The compatibility package com.android.virtualization.terminal (terminal/kopru, signed
+         with this app's key) forwards requests and status calls of apps written for Android's
+         own Linux terminal; nothing else may. -->
+    <permission
+        android:name="com.gbos.terminal.permission.TERMINAL_BRIDGE"
+        android:protectionLevel="signature" />
+    <!-- Defined by that package (signature|preinstalled, as in Android's terminal): this app
+         sends the change notifications of its vm_status URI. -->
+    <uses-permission android:name="com.android.virtualization.terminal.permission.MANAGE_TERMINAL" />
+    <!-- Requests come forwarded by the compatibility package: the app that made one (its name,
+         icon, uid) and the provider of the file it gives are not otherwise visible here. -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+
+    <application
+        android:name=".TerminalApp"
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:theme="@style/Theme.Terminal"
+        android:allowBackup="false"
+        android:supportsRtl="true"
+        android:extractNativeLibs="false"
+        android:enableOnBackInvokedCallback="true">
+
+        <activity
+            android:name=".TerminalActivity"
+            android:exported="true"
+            android:launchMode="singleInstancePerTask"
+            android:resizeableActivity="true"
+            android:windowSoftInputMode="adjustResize|stateAlwaysHidden"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|density|fontScale|colorMode">
+            <layout
+                android:defaultWidth="960dp"
+                android:defaultHeight="620dp"
+                android:minWidth="360dp"
+                android:minHeight="240dp" />
+            <property
+                android:name="android.window.PROPERTY_SUPPORTS_MULTI_INSTANCE_SYSTEM_UI"
+                android:value="true" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:label="@string/settings"
+            android:resizeableActivity="true">
+            <layout
+                android:defaultWidth="560dp"
+                android:defaultHeight="640dp" />
+        </activity>
+
+        <!-- Started by gbos-linuxd (root) for xdg-open of a file: no UI of its own. -->
+        <activity
+            android:name=".OpenFileActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <!-- Approval of a request from another app, forwarded by the compatibility package. -->
+        <activity
+            android:name=".AgentRequestActivity"
+            android:exported="true"
+            android:permission="com.gbos.terminal.permission.TERMINAL_BRIDGE"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.Terminal.Request"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|density|fontScale|colorMode|uiMode|locale|layoutDirection" />
+
+        <service
+            android:name=".SessionService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeps the open Linux terminal sessions alive while the window is in the background" />
+        </service>
+
+        <!-- getVmStatus and the port forwarding calls of Android's terminal, for the
+             compatibility package's provider. -->
+        <provider
+            android:name=".StatusProvider"
+            android:authorities="com.gbos.terminal.status"
+            android:exported="true"
+            android:permission="com.gbos.terminal.permission.TERMINAL_BRIDGE" />
+
+        <provider
+            android:name=".FilesProvider"
+            android:authorities="com.gbos.terminal.files"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+    </application>
+</manifest>

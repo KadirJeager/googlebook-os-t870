@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Compatibility package for apps written for Android's own Linux terminal (Antigravity):
+     they address com.android.virtualization.terminal by package name (intents) and authority
+     (provider). This package takes that name in place of the terminal app the image's
+     com.android.virt APEX ships, which needs KVM and cannot run on this tablet
+     (yamalar/aosp_terminal.py), and forwards to the Googlebook Terminal (com.gbos.terminal),
+     which checks every request and asks the user. No UI, no state of its own. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.android.virtualization.terminal">
+
+    <!-- As in Android's terminal: apps preinstalled on the system image (or signed like it)
+         may use the terminal's request activity and status provider. -->
+    <permission
+        android:name="com.android.virtualization.terminal.permission.MANAGE_TERMINAL"
+        android:protectionLevel="signature|preinstalled" />
+    <uses-permission android:name="com.gbos.terminal.permission.TERMINAL_BRIDGE" />
+
+    <queries>
+        <package android:name="com.gbos.terminal" />
+    </queries>
+
+    <application
+        android:label="@string/app_name"
+        android:allowBackup="false"
+        android:supportsRtl="true">
+
+        <activity
+            android:name=".RequestBridgeActivity"
+            android:exported="true"
+            android:permission="com.android.virtualization.terminal.permission.MANAGE_TERMINAL"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|density|fontScale|colorMode|uiMode|locale|layoutDirection">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="android-terminal" android:host="start" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="com.android.virtualization.terminal.action.SHARE_DIRECTORY" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+            </intent-filter>
+        </activity>
+
+        <provider
+            android:name=".StatusBridgeProvider"
+            android:authorities="com.android.virtualization.terminal.provider"
+            android:exported="true"
+            android:permission="com.android.virtualization.terminal.permission.MANAGE_TERMINAL" />
+    </application>
+</manifest>

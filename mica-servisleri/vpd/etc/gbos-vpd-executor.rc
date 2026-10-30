@@ -1,0 +1,14 @@
+# vendor.google.desktop.vpd_executor.IVpdExecutor/default on the SM-T870 (mica-servisleri/README.md).
+# A lazy service like mica's own executor: servicemanager starts it when a client asks for the
+# interface and it exits once no client holds it.
+service gbos_vpd_executor /system/bin/gbos-vpd-executor
+    class hal
+    user system
+    group system
+    interface aidl vendor.google.desktop.vpd_executor.IVpdExecutor/default
+    disabled
+    oneshot
+
+# RW_VPD store (Googlebooks keep it in firmware flash, this tablet in /data).
+on post-fs-data
+    mkdir /data/misc/gbos_vpd 0700 system system

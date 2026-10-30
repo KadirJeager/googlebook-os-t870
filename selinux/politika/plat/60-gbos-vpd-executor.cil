@@ -1,0 +1,57 @@
+;; gbos-vpd-executor (mica-servisleri, mica_servisleri.install()): the tablet's implementation of
+;; mica's vendor.google.desktop.vpd_executor.IVpdExecutor/default, a lazy native AIDL service on
+;; /system. init starts it on demand (interface aidl ..., disabled, oneshot, no seclabel), so it
+;; enters its domain from the exec label (/system/bin/gbos-vpd-executor gbos_vpd_executor_exec in
+;; plat_file_contexts, written by install()). Its state lives in /data/misc/gbos_vpd
+;; (gbos_vpd_data_file, mkdir 0700 system system in post-fs-data). Callers: system_server and
+;; com.android.desktop.serviceability (system_app). The service label vpd_executor_service comes
+;; from mica's vendor policy (system_ext/50-mica-servisleri.cil).
+
+;; init_daemon_domain(gbos_vpd_executor)
+(type gbos_vpd_executor)
+(roletype object_r gbos_vpd_executor)
+(typeattributeset domain (gbos_vpd_executor))
+(typeattributeset coredomain (gbos_vpd_executor))
+(type gbos_vpd_executor_exec)
+(roletype object_r gbos_vpd_executor_exec)
+(typeattributeset file_type (gbos_vpd_executor_exec))
+(typeattributeset exec_type (gbos_vpd_executor_exec))
+(typeattributeset system_file_type (gbos_vpd_executor_exec))
+(allow init gbos_vpd_executor_exec (file (read getattr map execute open)))
+(allow init gbos_vpd_executor (process (transition siginh rlimitinh)))
+(dontaudit init gbos_vpd_executor (process (noatsecure)))
+(allow gbos_vpd_executor gbos_vpd_executor_exec (file (read getattr map execute open entrypoint)))
+(typetransition init gbos_vpd_executor_exec process gbos_vpd_executor)
+
+;; binder_use + add_service; servicemanager calls back (IClientCallback.onClients) for the lazy
+;; registration
+(typeattributeset binderservicedomain (gbos_vpd_executor))
+(allow gbos_vpd_executor servicemanager (binder (call transfer)))
+(allow servicemanager gbos_vpd_executor (binder (call transfer)))
+(allow gbos_vpd_executor vpd_executor_service (service_manager (add find)))
+
+;; Callers: binder_call(system_server|system_app, gbos_vpd_executor)
+(allow system_server gbos_vpd_executor (binder (call transfer)))
+(allow gbos_vpd_executor system_server (binder (transfer)))
+(allow system_server gbos_vpd_executor (fd (use)))
+(allow system_app vpd_executor_service (service_manager (find)))
+(allow system_app gbos_vpd_executor (binder (call transfer)))
+(allow gbos_vpd_executor system_app (binder (transfer)))
+(allow system_app gbos_vpd_executor (fd (use)))
+
+;; Identity it reports: ro.serialno, ro.boot.serialno (serialno_prop), ro.boot.em.model
+;; (bootloader_prop, "ro.boot." prefix), ro.product.vendor.model (build_vendor_prop)
+(allow gbos_vpd_executor serialno_prop (file (read getattr map open)))
+(allow gbos_vpd_executor bootloader_prop (file (read getattr map open)))
+(allow gbos_vpd_executor build_vendor_prop (file (read getattr map open)))
+
+;; /data/misc/gbos_vpd
+(type gbos_vpd_data_file)
+(roletype object_r gbos_vpd_data_file)
+(typeattributeset file_type (gbos_vpd_data_file))
+(typeattributeset data_file_type (gbos_vpd_data_file))
+(typeattributeset core_data_file_type (gbos_vpd_data_file))
+(allow gbos_vpd_executor system_data_file (dir (search)))
+(allow gbos_vpd_executor gbos_vpd_data_file (dir (ioctl read write getattr lock open watch watch_reads add_name remove_name search)))
+(allow gbos_vpd_executor gbos_vpd_data_file (file (ioctl read write create getattr setattr lock append map unlink rename open watch watch_reads)))
+(allow init gbos_vpd_data_file (dir (ioctl read write create getattr setattr lock relabelfrom relabelto open watch watch_reads add_name remove_name search)))

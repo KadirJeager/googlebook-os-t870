@@ -1,0 +1,35 @@
+Sensors multi-HAL: the vendor's own DEVICE_ORIENTATION (the sensorhub's auto_rotation) is not
+offered any more, so the framework computes the rotation from the transformed accelerometer itself:
+low-pass filter, config_autoRotationTiltTolerance and a 23 degree hysteresis band around the
+quarter turns (dogal-yon/hal/src/natural_orientation.h framework_preferred, BENIOKU "Oto dönüş").
+
+--- a/aidl/sensors/HalProxySamsung.cpp
++++ b/aidl/sensors/HalProxySamsung.cpp
+@@ -62,12 +62,24 @@
+     for (const auto& [handle, sensor] : getSensors()) {
+         const uint32_t flags = sensor.flags;
+         if (flags & static_cast<uint32_t>(SensorFlagBits::DYNAMIC_SENSOR)) continue;
+-        const auto kind = orientation::kind_of(static_cast<int32_t>(sensor.type));
+-        mFrameInfo[handle] = {kind, (flags & static_cast<uint32_t>(SensorFlagBits::WAKE_UP)) != 0};
++        const int32_t type = static_cast<int32_t>(sensor.type);
++        const auto kind = orientation::kind_of(type);
++        // DEVICE_ORIENTATION and the like: the framework computes it better itself
++        const bool computedByFramework = orientation::framework_preferred(type);
++        // kHidden: the event must not reach the framework (device-frame data without a transform,
++        // or a sensor the framework computes itself); frameKind and getSensorsList use it.
++        mFrameInfo[handle] = {kind == orientation::Kind::kHidden || computedByFramework
++                                              ? orientation::Kind::kHidden
++                                              : kind,
++                              (flags & static_cast<uint32_t>(SensorFlagBits::WAKE_UP)) != 0};
+         if (kind == orientation::Kind::kHidden) {
+             ALOGE("natural orientation: %s (%#x, type %d) reports device-frame data without a "
+                   "defined transform; not offered",
+-                  sensor.name.c_str(), handle, static_cast<int32_t>(sensor.type));
++                  sensor.name.c_str(), handle, type);
++        } else if (computedByFramework) {
++            ALOGI("natural orientation: %s (%#x, type %d): not offered, the framework computes it "
++                  "from the accelerometer (tilt tolerance and hysteresis)",
++                  sensor.name.c_str(), handle, type);
+         } else if (kind != orientation::Kind::kUnchanged) {
+             ALOGI("natural orientation: %s (%#x): %s, panel rotation %d", sensor.name.c_str(),
+                   handle, kindName(kind), orientation::kPanelRotation);

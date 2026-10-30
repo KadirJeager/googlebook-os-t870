@@ -1,0 +1,10 @@
+<!-- vendor.google.desktop.vpd_executor on the SM-T870: served by /system/bin/gbos-vpd-executor
+     (mica-servisleri/README.md). mica declares it in its vendor manifest, which this tablet
+     does not have. -->
+<manifest version="9.0" type="framework">
+    <hal format="aidl">
+        <name>vendor.google.desktop.vpd_executor</name>
+        <version>1</version>
+        <fqname>IVpdExecutor/default</fqname>
+    </hal>
+</manifest>

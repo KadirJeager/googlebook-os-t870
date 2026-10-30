@@ -1,0 +1,17 @@
+;; Googlebook OS "Tablet modu" (T870-araclar/tablet-modu).
+;;
+;; Kernel patch 0002 adds /sys/devices/virtual/sec/sec_keypad/tablet_mode: 1 treats an open
+;; cover keyboard as folded back. The quick settings tile (com.gbos.tabletmodu, a priv-app, so
+;; priv_app) reads and writes it; init opens it to app uids on boot (gbos-tablet-modu.rc).
+;; The node gets its own type: coredomain may not open plain sysfs files.
+(type gbos_tablet_mode_sysfs)
+(roletype object_r gbos_tablet_mode_sysfs)
+(typeattributeset fs_type (gbos_tablet_mode_sysfs))
+(typeattributeset sysfs_type (gbos_tablet_mode_sysfs))
+;; app processes carry per-user MLS categories; the node is one system-wide switch
+(typeattributeset mlstrustedobject (gbos_tablet_mode_sysfs))
+(genfscon sysfs "/devices/virtual/sec/sec_keypad/tablet_mode" (u object_r gbos_tablet_mode_sysfs ((s0) (s0))))
+
+(allow priv_app_all sysfs (dir (search)))
+(allow priv_app_all gbos_tablet_mode_sysfs (file (read write getattr open)))
+(allow init gbos_tablet_mode_sysfs (file (setattr)))

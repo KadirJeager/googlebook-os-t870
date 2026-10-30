@@ -1,0 +1,6 @@
+# The LineageOS build this module's vendor HAL was checked against: the zip, and the SHA-256 of
+# the vendor files the port mirrors (testler compare the zip and $WORK/lineage/bolumler with it).
+lineage-24.0-20261011-nightly-gts7lwifi-signed.zip  sha256=0417b278827346c8a8346b5fa9695f612e96a132ceea40ae8227df3c0028019a  bolum=vendor
+vendor/etc/init/android.hardware.health-service.samsung.rc  12229dcae87a3453664c029f5cac42989c13f7544bd338650a88b44c8021bf4c
+vendor/etc/vintf/manifest/android.hardware.health-service.samsung.xml  cec97a8f284248d6e951f7d706d06741be63954ca2cee32dcb77a22f3f7e3ac9
+vendor/bin/hw/android.hardware.health-service.samsung  1d4798318c79a5891c403cad6e1c84767b73e0b92e49e75d80a6e18076b57145

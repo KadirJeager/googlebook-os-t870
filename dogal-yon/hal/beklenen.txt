@@ -1,0 +1,61 @@
+# Access vectors the natural-orientation HALs from /product need, checked against the policy the
+# tablet compiles at boot (yamalar/dogal_yon_hal.py politika; same format as
+# pil-sagligi/beklenen.txt). None is added by this module: all come from mica's platform policy
+# and the LineageOS vendor policy of hal_sensors_default and hal_camera_default. They hold because
+# the launchers are labelled with the vendor HALs' exec types and the libraries keep /product's
+# system_lib_file.
+
+# init starts the launchers and moves them into the vendor HALs' domains (init_daemon_domain)
+u:r:init:s0 u:object_r:hal_sensors_default_exec:s0 file execute
+u:r:init:s0 u:object_r:hal_sensors_default_exec:s0 file read
+u:r:init:s0 u:object_r:hal_sensors_default_exec:s0 file open
+u:r:init:s0 u:r:hal_sensors_default:s0 process transition
+u:r:hal_sensors_default:s0 u:object_r:hal_sensors_default_exec:s0 file entrypoint
+u:r:hal_sensors_default:s0 u:object_r:hal_sensors_default_exec:s0 file map
+u:r:init:s0 u:object_r:hal_camera_default_exec:s0 file execute
+u:r:init:s0 u:object_r:hal_camera_default_exec:s0 file read
+u:r:init:s0 u:object_r:hal_camera_default_exec:s0 file open
+u:r:init:s0 u:r:hal_camera_default:s0 process transition
+u:r:hal_camera_default:s0 u:object_r:hal_camera_default_exec:s0 file entrypoint
+u:r:hal_camera_default:s0 u:object_r:hal_camera_default_exec:s0 file map
+# the linker in the product section: linkerconfig, /product dirs, LLNDK from /system and APEX
+u:r:hal_sensors_default:s0 u:object_r:linkerconfig_file:s0 file read
+u:r:hal_sensors_default:s0 u:object_r:system_file:s0 dir search
+u:r:hal_sensors_default:s0 u:object_r:system_linker_exec:s0 file execute
+u:r:hal_sensors_default:s0 u:object_r:apex_mnt_dir:s0 dir search
+u:r:hal_camera_default:s0 u:object_r:linkerconfig_file:s0 file read
+u:r:hal_camera_default:s0 u:object_r:system_file:s0 dir search
+u:r:hal_camera_default:s0 u:object_r:system_linker_exec:s0 file execute
+u:r:hal_camera_default:s0 u:object_r:apex_mnt_dir:s0 dir search
+# /product/lib64/gbos-dogal-yon/*.so (system_lib_file): opened by path and mapped executable
+u:r:hal_sensors_default:s0 u:object_r:system_lib_file:s0 dir search
+u:r:hal_sensors_default:s0 u:object_r:system_lib_file:s0 file open
+u:r:hal_sensors_default:s0 u:object_r:system_lib_file:s0 file read
+u:r:hal_sensors_default:s0 u:object_r:system_lib_file:s0 file getattr
+u:r:hal_sensors_default:s0 u:object_r:system_lib_file:s0 file map
+u:r:hal_sensors_default:s0 u:object_r:system_lib_file:s0 file execute
+u:r:hal_camera_default:s0 u:object_r:system_lib_file:s0 dir search
+u:r:hal_camera_default:s0 u:object_r:system_lib_file:s0 file open
+u:r:hal_camera_default:s0 u:object_r:system_lib_file:s0 file read
+u:r:hal_camera_default:s0 u:object_r:system_lib_file:s0 file getattr
+u:r:hal_camera_default:s0 u:object_r:system_lib_file:s0 file map
+u:r:hal_camera_default:s0 u:object_r:system_lib_file:s0 file execute
+# the vendor libraries and sub-HALs, loaded as in the vendor process
+u:r:hal_sensors_default:s0 u:object_r:vendor_file:s0 file map
+u:r:hal_sensors_default:s0 u:object_r:vendor_file:s0 file execute
+u:r:hal_camera_default:s0 u:object_r:vendor_file:s0 file map
+u:r:hal_camera_default:s0 u:object_r:vendor_file:s0 file execute
+u:r:hal_camera_default:s0 u:object_r:same_process_hal_file:s0 file execute
+# what the HALs do, as the vendor binaries do it
+u:r:hal_sensors_default:s0 u:object_r:hal_sensors_service:s0 service_manager add
+u:r:hal_sensors_default:s0 u:r:servicemanager:s0 binder call
+u:r:hal_camera_default:s0 u:object_r:hal_camera_service:s0 service_manager add
+u:r:hal_camera_default:s0 u:r:servicemanager:s0 binder call
+# their clients
+u:r:system_server:s0 u:object_r:hal_sensors_service:s0 service_manager find
+u:r:system_server:s0 u:r:hal_sensors_default:s0 binder call
+u:r:cameraserver:s0 u:object_r:hal_camera_service:s0 service_manager find
+u:r:cameraserver:s0 u:r:hal_camera_default:s0 binder call
+# the domains stay as narrow as the vendor's: no reading of other /system or /product files
+-u:r:hal_sensors_default:s0 u:object_r:system_file:s0 file read
+-u:r:hal_camera_default:s0 u:object_r:system_file:s0 file read

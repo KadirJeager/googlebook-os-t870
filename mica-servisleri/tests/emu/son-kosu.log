@@ -1,0 +1,76 @@
+kaynak: 4.0 GB için sıra bekleniyor (boş 12.8 GB, taban 3.0 GB):
+== Emulator gbos_vpd_test on emulator-5620
+Successfully disabled verity
+Remounted /system as RW
+Remounted /vendor as RW
+Remounted /product as RW
+Remounted /system_dlkm as RW
+Remounted /system_ext as RW
+Remount succeeded
+== Build for the emulator
+ERROR gbos-vpd-executor: RW_VPD store /var/tmp/gbos-vpd-emu-test/build/test-tmp/gbos-vpd-test-DzkkUt/rw_vpd is corrupt (CRC mismatch); moved to /var/tmp/gbos-vpd-emu-test/build/test-tmp/gbos-vpd-test-DzkkUt/rw_vpd.corrupt, starting empty
+== Install
+== Tests
+PASS not started at boot (init.svc '')
+PASS store directory drwx------ system system
+PASS waitForService(vendor.google.desktop.vpd_executor.IVpdExecutor/default) returned after 205 ms
+PASS lazy start took less than 5 s
+PASS interface version 1
+PASS interface hash 11049698b211cb439aad0e72f4c391331ed7063b
+PASS RO keys [serial_number, model_name] == [serial_number, model_name]
+PASS RO serial_number is the device serial EMULATOR37X1X11X0
+PASS RO model_name is the device model sdk_gphone64_x86_64
+PASS missing RO key: entry with the key and a null value
+PASS RO mlb_serial_number absent
+PASS RO imei absent
+PASS RO meid absent
+PASS RO mfg_sku_id absent
+PASS RO region absent
+PASS RO oem_key2 absent
+PASS RO kb_info absent
+PASS fresh RW has no activate_date
+PASS fresh RW is empty
+PASS activate_date written and read back
+PASS null value deletes the key
+PASS deleting a missing key is a no-op
+PASS RO_VPD write refused: ServiceSpecificException(-1, RO_VPD is read-only: it holds the tablet's own factory data)
+PASS RW_VPD over 32 KiB refused: ServiceSpecificException(-1, RW_VPD would exceed 32768 bytes)
+PASS invalid key refused: java.lang.IllegalArgumentException: invalid key "a=b"
+PASS refused update changed nothing
+PASS null key refused: java.lang.IllegalArgumentException: VPD entry without a key
+PASS invalid region refused: java.lang.IllegalArgumentException: invalid VPD region 2
+PASS rw_vpd -rw------- system system
+PASS no temporary file left
+PASS exited once no client held it (init.svc 'stopped')
+PASS waitForService(vendor.google.desktop.vpd_executor.IVpdExecutor/default) returned after 24 ms
+PASS lazy start took less than 5 s
+PASS RW survived the service restart
+PASS waitForService(vendor.google.desktop.vpd_executor.IVpdExecutor/default) returned after 18 ms
+PASS lazy start took less than 5 s
+PASS app uid refused: java.lang.SecurityException: caller may not access the VPD
+PASS ctl.interface_start starts it
+PASS service call getEntries(RO) shows serial_number
+PASS service call getValue(RO, ubind_attribute): entry, null value
+10-22 06:34:47.108  2442  2442 I gbos-vpd-executor: registered vendor.google.desktop.vpd_executor.IVpdExecutor/default
+10-22 06:34:47.108  2442  2442 I libbinder.AidlLazyServiceRegistrar: Process has 1 (of 1 available) client(s) in use after notification vendor.google.desktop.vpd_executor.IVpdExecutor/default has clients: 1
+10-22 06:34:47.157  2442  2442 I gbos-vpd-executor: RW_VPD updated: activate_date
+10-22 06:34:47.165  2442  2442 I gbos-vpd-executor: RW_VPD updated: tmp_key, tmp_key (delete)
+10-22 06:34:47.166  2442  2442 I gbos-vpd-executor: RW_VPD updated: never_set (delete)
+10-22 06:34:47.167  2442  2442 E gbos-vpd-executor: RW_VPD update of big failed: RW_VPD would exceed 32768 bytes
+10-22 06:34:47.168  2442  2442 E gbos-vpd-executor: RW_VPD update of ok, a=b failed: invalid key "a=b"
+10-22 06:34:49.470  2442  2442 I libbinder.AidlLazyServiceRegistrar: Process has 0 (of 1 available) client(s) in use after notification vendor.google.desktop.vpd_executor.IVpdExecutor/default has clients: 0
+10-22 06:34:49.823  2914  2914 I libbinder.AidlLazyServiceRegistrar: Registering service vendor.google.desktop.vpd_executor.IVpdExecutor/default
+10-22 06:34:49.837  2914  2914 I gbos-vpd-executor: registered vendor.google.desktop.vpd_executor.IVpdExecutor/default
+10-22 06:34:49.837  2914  2914 I libbinder.AidlLazyServiceRegistrar: Process has 1 (of 1 available) client(s) in use after notification vendor.google.desktop.vpd_executor.IVpdExecutor/default has clients: 1
+10-22 06:34:54.447  2914  2914 I libbinder.AidlLazyServiceRegistrar: Process has 0 (of 1 available) client(s) in use after notification vendor.google.desktop.vpd_executor.IVpdExecutor/default has clients: 0
+10-22 06:34:55.148  3411  3411 I libbinder.AidlLazyServiceRegistrar: Registering service vendor.google.desktop.vpd_executor.IVpdExecutor/default
+10-22 06:34:55.150  3411  3411 I gbos-vpd-executor: registered vendor.google.desktop.vpd_executor.IVpdExecutor/default
+10-22 06:34:55.150  3411  3411 I libbinder.AidlLazyServiceRegistrar: Process has 1 (of 1 available) client(s) in use after notification vendor.google.desktop.vpd_executor.IVpdExecutor/default has clients: 1
+10-22 06:34:55.158  3411  3411 W gbos-vpd-executor: refused call from uid 2000
+10-22 06:34:59.446  3411  3411 I libbinder.AidlLazyServiceRegistrar: Process has 0 (of 1 available) client(s) in use after notification vendor.google.desktop.vpd_executor.IVpdExecutor/default has clients: 0
+10-22 06:35:00.353  3532  3532 I libbinder.AidlLazyServiceRegistrar: Registering service vendor.google.desktop.vpd_executor.IVpdExecutor/default
+10-22 06:35:00.357  3532  3532 I gbos-vpd-executor: registered vendor.google.desktop.vpd_executor.IVpdExecutor/default
+10-22 06:35:02.376  3532  3532 I libbinder.AidlLazyServiceRegistrar: Process has 1 (of 1 available) client(s) in use after notification vendor.google.desktop.vpd_executor.IVpdExecutor/default has clients: 1
+PASS no client waited a second for the service
+EMULATOR TEST PASSED
+exit 0

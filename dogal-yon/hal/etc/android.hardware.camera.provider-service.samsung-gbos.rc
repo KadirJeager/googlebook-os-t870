@@ -1,0 +1,34 @@
+# Googlebook OS on SM-T870: the tablet's camera provider with the camera orientation re-expressed
+# for the landscape natural orientation (T870-araclar/dogal-yon/hal, yamalar/dogal_yon_hal.py).
+#
+# It replaces the LineageOS vendor service vendor.camera.provider
+# (/vendor/etc/init/android.hardware.camera.provider-service.samsung.rc) the way the sensors HAL
+# and pil-sagligi's health HAL do: an "override" across the treble boundary is refused by init
+# (system/core/init/service_parser.cpp EndSection), so the vendor service is stopped before its
+# class starts and this one serves ICameraProvider/internal/0 with the same class, user, groups,
+# I/O priority, capabilities and task profiles.
+#
+# The vendor service keeps its "interface aidl ...ICameraProvider/internal/0" line; init allows
+# only one service per interface (service_parser.cpp ParseInterface), so this one has none.
+
+on early-init
+    stop vendor.camera.provider
+
+service gbos.camera.provider /product/bin/hw/android.hardware.camera.provider-service.samsung-gbos
+    class hal
+    user cameraserver
+    group audio camera input drmrpc usb
+    ioprio rt 4
+    capabilities SYS_NICE
+    task_profiles CameraServiceCapacity MaxPerformance
+
+# vndservicemanager restarts the whole hal class when it restarts ("onrestart class_restart hal",
+# without --only-enabled), which starts the stopped vendor service too. Because the vendor service
+# declares the interface, servicemanager would also start it on demand (ctl.interface_start) for a
+# client waiting for ICameraProvider/internal/0; cameraserver only waits like that for a lazy
+# provider (ro.camera.enableLazyHal, not set on this device: AidlProviderInfo::
+# startProviderInterface), otherwise it uses checkService and registration notifications. Either
+# way the vendor service is stopped again and this one registers anew.
+on property:init.svc.vendor.camera.provider=running
+    stop vendor.camera.provider
+    restart gbos.camera.provider

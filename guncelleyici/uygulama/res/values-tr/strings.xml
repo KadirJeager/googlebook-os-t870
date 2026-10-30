@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="uygulama_adi">Sistem güncellemesi</string>
+    <string name="baslik">Sistem güncellemesi</string>
+    <string name="kanal_adi">Sistem güncellemeleri</string>
+
+    <string name="guncel_baslik">Sisteminiz güncel</string>
+    <string name="guncel_metin">Googlebook OS her gün yeni sürüm olup olmadığına bakar ve tablet şarj olurken gece kurar.</string>
+    <string name="yeni_baslik">Sistem güncellemesi var</string>
+    <string name="yeni_metin">Googlebook OS %1$d (%2$s). Tablet, Wi-Fi\'da ve şarjdayken güncellemeyi hazırlar; verileriniz korunur.</string>
+    <string name="hazirlaniyor_baslik">Güncelleme hazırlanıyor</string>
+    <string name="hazirlaniyor_metin">Yeni sürüm indirilip bu tablete uyarlanıyor. Tableti kullanmaya devam edebilirsiniz.</string>
+    <string name="hazir_baslik">Güncelleme hazır</string>
+    <string name="hazir_metin">Googlebook OS %1$s bu gece tablet şarj olurken ya da şimdi yeniden başlatınca kurulur. Kurulum yaklaşık on dakika sürer; verileriniz korunur. Yeni sürüm düzgün açılmazsa tablet kendiliğinden şimdiki sürüme döner.</string>
+    <string name="kuruluyor_baslik">Güncelleme kuruluyor</string>
+    <string name="deneme_baslik">Yeni sürüm denetleniyor</string>
+    <string name="deneme_metin">Tablet yeni sürümün düzgün çalıştığını doğruluyor. Çalışmazsa kendiliğinden önceki sürüme döner.</string>
+    <string name="guncellendi_baslik">Sisteminiz güncel</string>
+    <string name="guncellendi_metin">Güncelleme kuruldu.</string>
+    <string name="geri_baslik">Güncelleme geri alındı</string>
+    <string name="geri_metin">Yeni sürüm düzgün açılmadığı için tablet önceki sürüme döndü. Verileriniz güncellemeden önceki halinde.</string>
+    <string name="geri_donuluyor_baslik">Önceki sürüme dönülüyor</string>
+    <string name="duraklatildi_baslik">Hazırlık duraklatıldı</string>
+    <string name="duraklatildi_metin">Kaldığı yerden sürer.</string>
+    <string name="hata_baslik">Güncelleme yapılamadı</string>
+    <string name="servis_yok">Güncelleme hizmeti çalışmıyor.</string>
+    <string name="denetlenemedi">Güncelleme denetlenemedi: %1$s</string>
+
+    <string name="denetle">Güncellemeyi denetle</string>
+    <string name="denetleniyor">Denetleniyor…</string>
+    <string name="hazirla">İndir ve hazırla</string>
+    <string name="durdur">Duraklat</string>
+    <string name="devam">Devam et</string>
+    <string name="simdi_yeniden_baslat">Şimdi yeniden başlat</string>
+    <string name="yeniden_dene">Yeniden dene</string>
+
+    <string name="onay_baslik">Yeniden başlatılıp kurulsun mu?</string>
+    <string name="onay_metin">Tablet yeniden başlar, Googlebook OS %1$s sürümünü kurar ve yeniden açılır. Yaklaşık on dakika sürer; tableti kapatmayın.</string>
+    <string name="iptal">İptal</string>
+    <string name="pil_yetersiz">Önce tableti şarj edin: en az %%%1$d, şarjdayken %%%2$d.</string>
+
+    <string name="ayrinti_surum">Googlebook OS sürümü</string>
+    <string name="ayrinti_son_denetim">Son denetim</string>
+    <string name="ayrinti_sunucu">En yeni sürüm</string>
+    <string name="ayrinti_onceki">Saklanan önceki sürüm</string>
+    <string name="hic">Hiç</string>
+
+    <string name="bildirim_yeni_baslik">Sistem güncellemesi var</string>
+    <string name="bildirim_yeni_metin">Googlebook OS %1$d (%2$s), tablet Wi-Fi\'da ve şarjdayken hazırlanacak.</string>
+    <string name="bildirim_hazir_baslik">Güncelleme hazır</string>
+    <string name="bildirim_hazir_metin">Bu gece tablet şarj olurken kurulacak.</string>
+    <string name="bildirim_guncellendi_baslik">Sistem güncellendi</string>
+    <string name="bildirim_guncellendi_metin">Googlebook OS güncellendi.</string>
+    <string name="bildirim_geri_baslik">Güncelleme geri alındı</string>
+    <string name="bildirim_geri_metin">Yeni sürüm düzgün açılmadı; tablet önceki sürüme döndü.</string>
+    <string name="bildirim_hata_baslik">Güncelleme yapılamadı</string>
+</resources>

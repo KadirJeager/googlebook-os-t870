@@ -1,0 +1,3 @@
+# --- GBOS_GUNCELLEYICI BEGIN: Googlebook OS updater (T870-araclar/guncelleyici) ---
+persist.vold.dont_commit_checkpoint u:object_r:gbos_vold_commit_prop:s0 exact bool
+# --- GBOS_GUNCELLEYICI END ---

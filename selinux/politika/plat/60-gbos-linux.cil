@@ -1,0 +1,347 @@
+;; Googlebook Linux environment (T870-araclar/terminal/selinux/gbos_linux.cil).
+;; In the image: selinux/politika/plat/60-gbos-linux.cil, appended by yamalar/selinux.py.
+;;
+;;   gbos_linuxd           root service (init: seclabel u:r:gbos_linuxd:s0)
+;;   gbos_linux            everything running inside the Linux environment
+;;   gbos_linux_data_file  /data/gbos-linux (root filesystem) and /data/misc_ce/N/gbos-linux (homes)
+;;   gbos_linux_socket     /dev/socket/gbos_linux (the node; the socket object is gbos_linuxd)
+;;   gbos_linux_tmpfs      /dev, /dev/shm, /run, /tmp inside the environment
+;;   gbos_linux_devpts     the environment's own devpts; its ptys are used by the Terminal app
+;;
+;; Both domains are enforcing. The rules below passed the full scenario on the Android 37 test
+;; emulator with SELinux enforcing and no permissive domain (terminal/test/emulator.sh; evidence
+;; selinux/kanit/terminal-emulator-20261022.txt); the tablet run is selinux/cihaz-testi.md.
+
+(type gbos_linuxd)
+(roletype object_r gbos_linuxd)
+(typeattributeset domain (gbos_linuxd))
+(typeattributeset coredomain (gbos_linuxd))
+(typeattributeset mlstrustedsubject (gbos_linuxd))
+
+(type gbos_linux)
+(roletype object_r gbos_linux)
+(typeattributeset domain (gbos_linux))
+(typeattributeset coredomain (gbos_linux))
+
+(type gbos_linux_data_file)
+(roletype object_r gbos_linux_data_file)
+(typeattributeset file_type (gbos_linux_data_file))
+(typeattributeset data_file_type (gbos_linux_data_file))
+(typeattributeset core_data_file_type (gbos_linux_data_file))
+
+(type gbos_linux_socket)
+(roletype object_r gbos_linux_socket)
+(typeattributeset file_type (gbos_linux_socket))
+(typeattributeset coredomain_socket (gbos_linux_socket))
+(typeattributeset mlstrustedobject (gbos_linux_socket))
+
+(type gbos_linux_tmpfs)
+(roletype object_r gbos_linux_tmpfs)
+(typeattributeset file_type (gbos_linux_tmpfs))
+(typeattributeset fs_type (gbos_linux_tmpfs))
+
+(type gbos_linux_devpts)
+(roletype object_r gbos_linux_devpts)
+(typeattributeset file_type (gbos_linux_devpts))
+(typeattributeset fs_type (gbos_linux_devpts))
+(typeattributeset mlstrustedobject (gbos_linux_devpts))
+
+;; context= mounts of the environment's tmpfs/devpts
+(allow gbos_linux_tmpfs gbos_linux_tmpfs (filesystem (associate)))
+(allow gbos_linux_devpts gbos_linux_devpts (filesystem (associate)))
+(allow gbos_linuxd gbos_linux_tmpfs (filesystem (mount unmount relabelfrom relabelto associate)))
+(allow gbos_linuxd gbos_linux_devpts (filesystem (mount unmount relabelfrom relabelto associate)))
+(allow gbos_linuxd tmpfs (filesystem (relabelfrom)))
+(allow gbos_linuxd devpts (filesystem (relabelfrom)))
+
+;; init starts the service in its domain (seclabel); its only entry point is
+;; /system/bin/gbos-linuxd, labelled gbos_linuxd_exec by terminal/selinux/file_contexts (the
+;; image builder labels new files from the tree's file_contexts since 22 Oct 2026).
+(type gbos_linuxd_exec)
+(roletype object_r gbos_linuxd_exec)
+(typeattributeset file_type (gbos_linuxd_exec))
+(typeattributeset exec_type (gbos_linuxd_exec))
+(typeattributeset system_file_type (gbos_linuxd_exec))
+(allow init gbos_linuxd (process (transition rlimitinh siginh noatsecure)))
+(allow init gbos_linuxd_exec (file (read open getattr execute map)))
+(allow gbos_linuxd gbos_linuxd_exec (file (read open getattr execute map entrypoint)))
+(allow init gbos_linux_socket (sock_file (create setattr unlink getattr)))
+(allow init gbos_linuxd (unix_stream_socket (create bind setopt getattr setattr)))
+
+;; guests are started by the service: transition on exec (attr/exec)
+(allow gbos_linuxd gbos_linux (process (transition rlimitinh siginh noatsecure)))
+(allow gbos_linuxd self (process (setexec)))
+(allow gbos_linux gbos_linux_data_file (file (read open getattr execute map entrypoint)))
+
+;; ---------------------------------------------------------------------------------------
+;; Enforcing rules. Sources: denials of both domains on the test emulator across install,
+;; sessions, apt/DNS/HTTPS/ping, ~/android, xdg-open, binds and removal (selinux/avc2cil.py),
+;; plus what the design needs explicitly (comments). Validate on the tablet with
+;;   adb logcat -b all -d | grep avc: | python3 selinux/avc2cil.py
+;; it must print nothing new.
+
+;; Both domains use the network like any app: sockets, DNS through netd (Android's resolver),
+;; fwmark. netdomain carries those rules.
+(typeattributeset netdomain (gbos_linuxd gbos_linux))
+
+;; ---- gbos_linuxd: the service
+(allow gbos_linuxd self (capability (chown dac_override dac_read_search fowner fsetid kill setgid setuid setpcap net_bind_service net_raw sys_chroot sys_admin sys_ptrace sys_resource mknod audit_write setfcap)))
+(allow gbos_linuxd self (process (fork sigchld sigkill sigstop signull signal getsched setsched getsession getpgid setpgid getcap setcap getattr setexec setrlimit)))
+(allow gbos_linuxd self (unix_stream_socket (all)))
+(allow gbos_linuxd self (udp_socket (all)))
+(allow gbos_linuxd self (tcp_socket (all)))
+(allow gbos_linuxd self (anon_inode (create read write ioctl getattr)))
+(allow gbos_linuxd self (fifo_file (all)))
+(allow gbos_linuxd node (udp_socket (node_bind)))
+(allow gbos_linuxd node (tcp_socket (node_bind)))
+(allow gbos_linuxd port (udp_socket (name_bind)))
+(allow gbos_linuxd port (tcp_socket (name_bind)))
+;; its own files, sockets and the environment's private filesystems
+(allow gbos_linuxd gbos_linux_data_file (dir (all)))
+(allow gbos_linuxd gbos_linux_data_file (file (all)))
+(allow gbos_linuxd gbos_linux_data_file (lnk_file (all)))
+(allow gbos_linuxd gbos_linux_data_file (sock_file (all)))
+(allow gbos_linuxd gbos_linux_data_file (fifo_file (all)))
+(allow gbos_linuxd gbos_linux_data_file (chr_file (all)))
+(allow gbos_linuxd gbos_linux_tmpfs (dir (all)))
+(allow gbos_linuxd gbos_linux_tmpfs (file (all)))
+(allow gbos_linuxd gbos_linux_tmpfs (lnk_file (all)))
+(allow gbos_linuxd gbos_linux_tmpfs (chr_file (all)))
+(allow gbos_linuxd gbos_linux_devpts (dir (all)))
+(allow gbos_linuxd gbos_linux_devpts (chr_file (all)))
+(allow gbos_linuxd gbos_linux_socket (sock_file (all)))
+;; mounts of the environment: proc, sysfs (read-only), Android's shared storage (mnt_user_file,
+;; fuse), the private tmpfs/devpts instances, binds of /data and of the CE homes
+(allow gbos_linuxd proc (filesystem (mount unmount)))
+(allow gbos_linuxd sysfs (filesystem (mount unmount)))
+(allow gbos_linuxd tmpfs (filesystem (mount unmount)))
+;; Shared storage as Linux uses it (/mnt/storage/<user>): gbos_linuxd opens /dev/fuse and makes
+;; the FUSE mount ("fd=" option); bindfs running as the Terminal user serves it, so programs kept
+;; there (Antigravity's language server shim, ./gradlew) run as on Android's own terminal.
+(allow gbos_linuxd fuse_device (chr_file (open read write getattr)))
+(allow gbos_linuxd fuse (filesystem (mount unmount)))
+(allow gbos_linux fuse_device (chr_file (read write getattr ioctl)))
+(allow gbos_linuxd devpts (filesystem (mount unmount)))
+(allow gbos_linuxd labeledfs (filesystem (getattr remount unmount)))
+(allow gbos_linuxd mnt_user_file (dir (search getattr read open mounton)))
+(allow gbos_linuxd fuse (dir (search getattr)))
+(allow gbos_linuxd rootfs (dir (search getattr mounton)))
+(allow gbos_linuxd system_data_root_file (dir (search getattr)))
+(allow gbos_linuxd system_userdir_file (dir (search getattr)))
+(allow gbos_linuxd system_data_file (dir (search getattr)))
+(allow gbos_linuxd proc (dir (mounton)))
+(allow gbos_linuxd sysfs (dir (mounton)))
+;; the environment's processes: start (transition), watch, signal, find them after a restart
+(allow gbos_linuxd gbos_linux (process (sigchld sigkill sigstop signull signal getattr getpgid setpgid)))
+(allow gbos_linuxd gbos_linux (dir (search getattr read open)))
+(allow gbos_linuxd gbos_linux (file (read open getattr)))
+(allow gbos_linuxd gbos_linux (lnk_file (read getattr)))
+(allow gbos_linuxd gbos_linux (fd (use)))
+(dontaudit gbos_linuxd domain (dir (search getattr)))
+(dontaudit gbos_linuxd domain (lnk_file (read getattr)))
+(dontaudit gbos_linuxd domain (file (read open getattr)))
+(allow gbos_linuxd proc_net (file (read open getattr)))
+(allow gbos_linuxd packages_list_file (file (read open getattr)))
+;; /proc/<pid>/ns/{mnt,uts}: nsfs files carry no label in this policy (unlabeled)
+(allow gbos_linuxd unlabeled (file (read open getattr)))
+(allow gbos_linuxd system_userdir_file (dir (read open search getattr)))
+;; CE homes: /data/misc_ce/<user>/gbos-linux is created (and removed) in a system_data_file dir
+(allow gbos_linuxd system_data_file (dir (search getattr write add_name remove_name)))
+(typetransition gbos_linuxd system_data_file dir "gbos-linux" gbos_linux_data_file)
+;; DNS stub: owner of the querying socket from /proc/net/{udp,tcp}{,6}
+(allow gbos_linuxd proc_net_tcp_udp (file (read open getattr)))
+;; HTTPS through com.gbos.terminal.Fetch (app_process from the Terminal APK; ART runtime, JIT)
+(allow gbos_linuxd self (process (execmem)))
+(allow gbos_linuxd self (memfd_file (create read write getattr map execute)))
+(allow gbos_linuxd apex_info_file (file (read open getattr)))
+(allow gbos_linuxd build_attestation_prop (file (read open getattr map)))
+(allow gbos_linuxd zygote_exec (file (read open getattr execute execute_no_trans map)))
+(allow gbos_linuxd apex_art_data_file (dir (search getattr read open)))
+(allow gbos_linuxd apex_art_data_file (file (read open getattr map)))
+(allow gbos_linuxd apex_module_data_file (dir (search)))
+(allow gbos_linuxd dalvikcache_data_file (dir (search getattr)))
+(allow gbos_linuxd dalvikcache_data_file (file (read open getattr map)))
+(allow gbos_linuxd keychain_data_file (dir (search)))
+(allow gbos_linuxd keychain_data_file (file (read open getattr)))
+(allow gbos_linuxd odsign_prop (file (read open getattr map)))
+(allow gbos_linuxd system_file (file (execute_no_trans)))
+(allow gbos_linuxd vendor_toolbox_exec (file (getattr)))
+;; xdg-open: `cmd activity start-activity` (binder to the activity manager)
+(allow gbos_linuxd binder_device (chr_file (ioctl read write open map getattr)))
+(allow gbos_linuxd servicemanager (binder (call transfer)))
+(allow servicemanager gbos_linuxd (binder (call transfer)))
+(allow servicemanager gbos_linuxd (dir (search)))
+(allow servicemanager gbos_linuxd (file (read open)))
+(allow servicemanager gbos_linuxd (process (getattr)))
+(allow gbos_linuxd activity_service (service_manager (find)))
+(allow gbos_linuxd system_server (binder (call transfer)))
+(allow system_server gbos_linuxd (binder (call transfer)))
+(allow system_server gbos_linuxd (fd (use)))
+(allow system_server gbos_linuxd (fifo_file (read write getattr)))
+(allow netd gbos_linuxd (fd (use)))
+(allow netd gbos_linuxd (tcp_socket (getopt read write)))
+(allow netd gbos_linuxd (udp_socket (getopt read write)))
+
+;; ---- gbos_linux: everything inside the environment (a whole Debian system)
+;; Its own world: root filesystem, homes, private tmpfs/devpts.
+(allow gbos_linux gbos_linux_data_file (dir (all)))
+(allow gbos_linux gbos_linux_data_file (file (all)))
+(allow gbos_linux gbos_linux_data_file (lnk_file (all)))
+(allow gbos_linux gbos_linux_data_file (sock_file (all)))
+(allow gbos_linux gbos_linux_data_file (fifo_file (all)))
+(allow gbos_linux gbos_linux_tmpfs (dir (all)))
+(allow gbos_linux gbos_linux_tmpfs (file (all)))
+(allow gbos_linux gbos_linux_tmpfs (lnk_file (all)))
+(allow gbos_linux gbos_linux_tmpfs (sock_file (all)))
+(allow gbos_linux gbos_linux_tmpfs (fifo_file (all)))
+(allow gbos_linux gbos_linux_tmpfs (chr_file (all)))
+(allow gbos_linux gbos_linux_devpts (dir (all)))
+(allow gbos_linux gbos_linux_devpts (chr_file (all)))
+;; Processes: its own only (signals, ptrace for gdb/strace inside). The capability set matches
+;; what the service leaves in the bounding set (Docker's default without mknod).
+(allow gbos_linux self (process (all)))
+(allow gbos_linux self (capability (chown dac_override fsetid fowner net_raw setgid setuid setfcap setpcap net_bind_service sys_chroot kill audit_write)))
+(allow gbos_linux self (fd (use)))
+(allow gbos_linux self (fifo_file (all)))
+(allow gbos_linux self (file (all)))
+(allow gbos_linux self (dir (all)))
+(allow gbos_linux self (lnk_file (all)))
+(allow gbos_linux self (unix_stream_socket (all)))
+(allow gbos_linux self (unix_dgram_socket (all)))
+(allow gbos_linux self (tcp_socket (all)))
+(allow gbos_linux self (udp_socket (all)))
+(allow gbos_linux self (icmp_socket (all)))
+(allow gbos_linux self (rawip_socket (all)))
+;; shadow (useradd, groupadd) and sudo log through the audit socket, and abort when it is denied
+(allow gbos_linux self (netlink_audit_socket (create bind read write getattr setopt nlmsg_relay)))
+(allow gbos_linux self (netlink_route_socket (create bind read write getattr setattr getopt setopt nlmsg_read nlmsg_readpriv)))
+(allow gbos_linux self (anon_inode (create read write ioctl getattr map)))
+(allow gbos_linux port (tcp_socket (name_connect name_bind)))
+(allow gbos_linux port (udp_socket (name_bind)))
+(allow gbos_linux node (tcp_socket (node_bind)))
+(allow gbos_linux node (udp_socket (node_bind)))
+;; The session it belongs to: pipes, sockets and descriptors handed in by the service, the DNS
+;; stub and the host socket (xdg-open).
+(allow gbos_linux gbos_linuxd (fd (use)))
+(allow gbos_linux gbos_linuxd (fifo_file (read write getattr ioctl)))
+(allow gbos_linux gbos_linuxd (unix_stream_socket (connectto read write getattr)))
+(allow gbos_linux gbos_linuxd (udp_socket (read write)))
+(allow gbos_linux gbos_linuxd (process (sigchld)))
+;; Android's shared storage of its user (~/android), checked by MediaProvider per uid.
+(allow gbos_linux mnt_user_file (dir (search getattr)))
+(allow gbos_linux fuse (dir (all)))
+(allow gbos_linux fuse (file (all)))
+(allow gbos_linux fuse (lnk_file (read getattr)))
+;; Kernel interfaces a Linux userland reads.
+(allow gbos_linux proc (dir (search getattr read open)))
+(allow gbos_linux proc (file (read open getattr)))
+(allow gbos_linux proc (lnk_file (read getattr)))
+(allow gbos_linux proc_filesystems (file (read open getattr)))
+(allow gbos_linux proc_meminfo (file (read open getattr)))
+(allow gbos_linux proc_stat (file (read open getattr)))
+(allow gbos_linux proc_cpuinfo (file (read open getattr)))
+(allow gbos_linux proc_loadavg (file (read open getattr)))
+(allow gbos_linux proc_uptime (file (read open getattr)))
+(allow gbos_linux proc_version (file (read open getattr)))
+(allow gbos_linux proc_overcommit_memory (file (read open getattr)))
+(allow gbos_linux proc_pid_max (file (read open getattr)))
+(allow gbos_linux proc_max_map_count (file (read open getattr)))
+(allow gbos_linux proc_random (dir (search getattr)))
+(allow gbos_linux proc_random (file (read open getattr)))
+(allow gbos_linux proc_hostname (file (read open getattr)))
+(allow gbos_linux proc_tty_drivers (file (read open getattr)))
+(allow gbos_linux proc_swaps (file (read open getattr)))
+;; mke2fs/e2fsck read the kernel's ext4 features (image tools of the updater)
+(allow gbos_linux sysfs_fs_ext4_features (dir (search getattr read open)))
+(allow gbos_linux sysfs_fs_ext4_features (file (read open getattr)))
+(allow gbos_linux proc_net (file (read open getattr)))
+(allow gbos_linux proc_net (dir (search getattr read open)))
+(allow gbos_linux sysfs (dir (search getattr read open)))
+(allow gbos_linux sysfs (file (read open getattr)))
+(allow gbos_linux sysfs (lnk_file (read getattr)))
+(allow gbos_linux sysfs_devices_system_cpu (dir (search getattr read open)))
+(allow gbos_linux sysfs_devices_system_cpu (file (read open getattr)))
+;; /proc/1 is Android's init (no PID namespace on this kernel): only what ps/top read.
+(allow gbos_linux init (dir (search getattr)))
+(allow gbos_linux init (file (read open getattr)))
+(dontaudit gbos_linux domain (dir (search getattr)))
+(dontaudit gbos_linux domain (file (read open getattr)))
+(dontaudit gbos_linux domain (lnk_file (read getattr)))
+
+;; ---- the Terminal app (privileged app domains): socket, session ptys, home and xdg-open
+(allow priv_app_all gbos_linux_socket (sock_file (write)))
+(allow priv_app_all gbos_linuxd (unix_stream_socket (connectto)))
+(allow priv_app_all gbos_linuxd (fd (use)))
+(allow priv_app_all gbos_linux (fd (use)))
+(allow priv_app_all gbos_linux_devpts (chr_file (read write ioctl getattr)))
+(allow priv_app_all gbos_linux_data_file (dir (search getattr read open)))
+(allow priv_app_all gbos_linux_data_file (file (read open getattr)))
+;; agent requests (Antigravity "Terminal VM Setup" through AgentRequestActivity) hand the app's own
+;; pty to the daemon, which passes it to the command: the daemon and the command use that fd and
+;; the app's devpts (priv_app_devpts; Android 17 adds priv_app_36_devpts for targetSdk 36 apps)
+(allow gbos_linuxd priv_app_all (fd (use)))
+(allow gbos_linux priv_app_all (fd (use)))
+(typeattribute gbos_app_devpts)
+(typeattributeset gbos_app_devpts (priv_app_devpts priv_app_36_devpts))
+;; the app's pty carries the app's MLS categories (c522,c768...); the command runs at s0, so the
+;; pty is a trusted MLS object, as gbos_linux_devpts is. Type enforcement still limits who may
+;; touch it to the app itself and the two rules below.
+(typeattributeset mlstrustedobject (priv_app_devpts priv_app_36_devpts))
+(allow gbos_linuxd gbos_app_devpts (chr_file (read write ioctl getattr)))
+(allow gbos_linux gbos_app_devpts (chr_file (read write ioctl getattr)))
+(allowx gbos_linuxd gbos_app_devpts (ioctl chr_file ((range 0x0000 0xffff))))
+(allowx gbos_linux gbos_app_devpts (ioctl chr_file ((range 0x0000 0xffff))))
+;; sshd-session (Antigravity reaches Linux over ssh) keeps the session keyring
+(allow gbos_linux self (key (write link search view read setattr)))
+
+;; ---- ioctl. The policy restricts ioctl numbers per (source, target, class) through allowx; once
+;; any allowx covers a triple, unlisted ioctls are refused. Inside the environment every ioctl on
+;; its own objects is the program's business (ttys, FIONREAD, sockets...).
+(allowx gbos_linux gbos_linux_data_file (ioctl file ((range 0x0000 0xffff))))
+(allowx gbos_linux gbos_linux_data_file (ioctl dir ((range 0x0000 0xffff))))
+(allowx gbos_linux gbos_linux_tmpfs (ioctl file ((range 0x0000 0xffff))))
+(allowx gbos_linux gbos_linux_tmpfs (ioctl dir ((range 0x0000 0xffff))))
+(allowx gbos_linux gbos_linux_tmpfs (ioctl chr_file ((range 0x0000 0xffff))))
+(allowx gbos_linux gbos_linux_devpts (ioctl chr_file ((range 0x0000 0xffff))))
+(allowx gbos_linux self (ioctl file ((range 0x0000 0xffff))))
+(allowx gbos_linux self (ioctl fifo_file ((range 0x0000 0xffff))))
+(allowx gbos_linux self (ioctl tcp_socket ((range 0x0000 0xffff))))
+(allowx gbos_linux self (ioctl udp_socket ((range 0x0000 0xffff))))
+(allowx gbos_linux self (ioctl unix_stream_socket ((range 0x0000 0xffff))))
+(allowx gbos_linux self (ioctl unix_dgram_socket ((range 0x0000 0xffff))))
+(allowx gbos_linux self (ioctl icmp_socket ((range 0x0000 0xffff))))
+(allowx gbos_linux self (ioctl rawip_socket ((range 0x0000 0xffff))))
+(allowx gbos_linux self (ioctl netlink_route_socket ((range 0x0000 0xffff))))
+(allowx gbos_linux gbos_linuxd (ioctl fifo_file ((range 0x0000 0xffff))))
+(allowx gbos_linux fuse (ioctl file ((range 0x0000 0xffff))))
+(allowx gbos_linuxd gbos_linux_devpts (ioctl chr_file ((range 0x0000 0xffff))))
+(allowx gbos_linuxd gbos_linux_data_file (ioctl file ((range 0x0000 0xffff))))
+(allowx gbos_linuxd self (ioctl fifo_file ((range 0x0000 0xffff))))
+(allowx priv_app_all gbos_linux_devpts (ioctl chr_file ((range 0x0000 0xffff))))
+;; stdin/stdout/stderr of `gbos-linux run` callers reach programs inside
+(allow gbos_linux su (fifo_file (read write getattr ioctl)))
+(allow gbos_linux su (unix_stream_socket (read write getattr ioctl)))
+(allowx gbos_linux su (ioctl fifo_file ((range 0x0000 0xffff))))
+(allowx gbos_linux su (ioctl unix_stream_socket ((range 0x0000 0xffff))))
+(allow gbos_linux shell (fifo_file (read write getattr ioctl)))
+(allow gbos_linux shell (unix_stream_socket (read write getattr ioctl)))
+(allowx gbos_linux shell (ioctl fifo_file ((range 0x0000 0xffff))))
+(allowx gbos_linux shell (ioctl unix_stream_socket ((range 0x0000 0xffff))))
+
+;; ---- root and adb shell callers of gbos-linux (the service also checks ro.debuggable for shell)
+(allow su gbos_linux_socket (sock_file (write)))
+(allow su gbos_linuxd (unix_stream_socket (connectto)))
+(allow shell gbos_linux_socket (sock_file (write)))
+(allow shell gbos_linuxd (unix_stream_socket (connectto)))
+(allow shell gbos_linuxd (fd (use)))
+(allow shell gbos_linux (fd (use)))
+(allow shell gbos_linux_devpts (chr_file (ioctl read write getattr)))
+(allowx shell gbos_linux_devpts (ioctl chr_file ((range 0x0000 0xffff))))
+(allow su gbos_linuxd (fd (use)))
+(allow su gbos_linux (fd (use)))
+(allow su gbos_linux_devpts (chr_file (ioctl read write getattr)))
+(allowx su gbos_linux_devpts (ioctl chr_file ((range 0x0000 0xffff))))
+(allow gbos_linuxd su (fd (use)))
+(allow gbos_linux su (fd (use)))
+(allow gbos_linuxd shell (fd (use)))
+(allow gbos_linux shell (fd (use)))

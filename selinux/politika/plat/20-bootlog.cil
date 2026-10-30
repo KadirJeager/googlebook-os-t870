@@ -1,0 +1,16 @@
+;; gbos-bootlog (system/etc/init/gbos-bootlog.rc): logcat into /metadata/gbos-bootlog while
+;; ro.gbos.bootlog=1. It stays a permissive domain on purpose: a bring-up log must not lose
+;; lines to a missing rule; its denials still show up in the log it writes.
+(type gbos_bootlog)
+(roletype object_r gbos_bootlog)
+(typeattributeset domain (gbos_bootlog))
+(typeattributeset coredomain (gbos_bootlog))
+(typepermissive gbos_bootlog)
+(allow init gbos_bootlog (process (transition rlimitinh siginh noatsecure)))
+(allow init logcat_exec (file (getattr read open execute map)))
+(allow gbos_bootlog logcat_exec (file (read open getattr execute map entrypoint)))
+(allow gbos_bootlog self (capability (dac_override sys_nice)))
+(allow gbos_bootlog logd (unix_stream_socket (connectto)))
+(allow gbos_bootlog logdr_socket (sock_file (write)))
+(allow gbos_bootlog metadata_file (dir (ioctl read write getattr lock open watch watch_reads add_name remove_name search)))
+(allow gbos_bootlog metadata_file (file (ioctl read write create getattr setattr lock append map unlink rename open watch watch_reads)))

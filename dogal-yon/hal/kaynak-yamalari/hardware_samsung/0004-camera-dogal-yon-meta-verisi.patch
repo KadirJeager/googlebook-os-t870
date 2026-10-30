@@ -1,0 +1,94 @@
+Camera device: characteristics, physical camera characteristics and capture results leave the
+HAL with sensor orientation and lens pose re-expressed for the landscape natural orientation
+(dogal-yon/hal/src/camera_natural_orientation.cpp). Request templates stay as the HAL made them:
+apps send them back as request settings, and the HAL echoes request values (lens pose among
+them) in its results, which are re-expressed once on the way out.
+
+--- a/aidl/camera/device/convert.h
++++ b/aidl/camera/device/convert.h
+@@ -48,6 +48,11 @@
+ using ::aidl::android::hardware::camera::device::Stream;
+ 
+ void convertToAidl(const camera_metadata_t* src, CameraMetadata* dest);
++// Googlebook OS (T870-araclar/dogal-yon/hal): metadata the framework interprets
++// (characteristics, capture results) with the values defined relative to the device's natural
++// orientation re-expressed for its landscape natural orientation. Request templates keep
++// convertToAidl: they come back as request settings and the HAL echoes them in its results.
++void convertToAidlNaturalOrientation(const camera_metadata_t* src, CameraMetadata* dest);
+ 
+ bool convertFromAidl(const CameraMetadata& src, const camera_metadata_t** dst);
+ 
+--- a/aidl/camera/device/convert.cpp
++++ b/aidl/camera/device/convert.cpp
+@@ -23,6 +23,7 @@
+ #include <aidl/android/hardware/graphics/common/BufferUsage.h>
+ #include <aidl/android/hardware/graphics/common/Dataspace.h>
+ #include <aidl/android/hardware/graphics/common/PixelFormat.h>
++#include <camera_natural_orientation.h>
+ #include <hardware/camera_common.h>
+ 
+ namespace android {
+@@ -49,6 +50,14 @@
+     dest->metadata.assign(src_start, src_end);
+ }
+ 
++void convertToAidlNaturalOrientation(const camera_metadata_t* src, CameraMetadata* dest) {
++    if (src != nullptr &&
++        ::gbos::natural_orientation::rotate_camera_metadata(src, &dest->metadata)) {
++        return;
++    }
++    convertToAidl(src, dest);
++}
++
+ bool convertFromAidl(const CameraMetadata& src, const camera_metadata_t** dst) {
+     const std::vector<uint8_t>& metadata = src.metadata;
+     if (metadata.empty()) {
+--- a/aidl/camera/device/CameraDevice.cpp
++++ b/aidl/camera/device/CameraDevice.cpp
+@@ -79,7 +79,7 @@
+                 metadata.update(ANDROID_FLASH_INFO_STRENGTH_MAXIMUM_LEVEL, &torchStrengthLevels, 1);
+             }
+ 
+-            convertToAidl(metadata.release(), _aidl_return);
++            convertToAidlNaturalOrientation(metadata.release(), _aidl_return);
+         } else {
+             ALOGE("%s: get camera info failed!", __FUNCTION__);
+             status = Status::INTERNAL_ERROR;
+@@ -114,7 +114,7 @@
+                 camera_metadata_t* physicalInfo = nullptr;
+                 int ret = mModule->getPhysicalCameraInfo((int)id, &physicalInfo);
+                 if (ret == OK) {
+-                    convertToAidl(physicalInfo, _aidl_return);
++                    convertToAidlNaturalOrientation(physicalInfo, _aidl_return);
+                 } else if (ret == -EINVAL) {
+                     ALOGE("%s: %s is not a valid physical camera Id outside of getCameraIdList()",
+                           __FUNCTION__, in_physicalCameraId.c_str());
+--- a/aidl/camera/device/CameraDeviceSession.cpp
++++ b/aidl/camera/device/CameraDeviceSession.cpp
+@@ -1447,7 +1447,7 @@
+     result.frameNumber = frameNumber;
+     result.fmqResultSize = 0;
+     result.partialResult = hal_result->partial_result;
+-    convertToAidl(hal_result->result, &result.result);
++    convertToAidlNaturalOrientation(hal_result->result, &result.result);
+     if (nullptr != hal_result->result) {
+         bool resultOverriden = false;
+         Mutex::Autolock _l(mInflightLock);
+@@ -1497,7 +1497,7 @@
+ 
+         if (resultOverriden) {
+             const camera_metadata_t* metaBuffer = mOverridenResult.getAndLock();
+-            convertToAidl(metaBuffer, &result.result);
++            convertToAidlNaturalOrientation(metaBuffer, &result.result);
+             mOverridenResult.unlock(metaBuffer);
+         }
+     }
+@@ -1658,7 +1658,7 @@
+                 return;
+             }
+             CameraMetadata physicalMetadata;
+-            convertToAidl(shadowResult.physcam_metadata[i], &physicalMetadata);
++            convertToAidlNaturalOrientation(shadowResult.physcam_metadata[i], &physicalMetadata);
+             PhysicalCameraMetadata physicalCameraMetadata = {.fmqMetadataSize = 0,
+                                                              .physicalCameraId = physicalId,
+                                                              .metadata = physicalMetadata};

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Googlebook Terminal: the notification of open terminals needs no extra prompt. -->
+<exceptions>
+    <exception package="com.gbos.terminal">
+        <permission name="android.permission.POST_NOTIFICATIONS" fixed="false" />
+    </exception>
+</exceptions>

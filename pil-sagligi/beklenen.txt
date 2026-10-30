@@ -1,0 +1,32 @@
+# Access vectors the health HAL from /product needs, checked against the policy the tablet
+# compiles at boot (yamalar/pil_sagligi.py politika; same format as selinux/beklenen.txt).
+# None is added by this module: all come from mica's platform policy and the LineageOS vendor
+# policy of hal_health_default. They hold because the binary is labelled hal_health_default_exec.
+
+# init starts it and moves it into the vendor HAL's domain (init_daemon_domain)
+u:r:init:s0 u:object_r:hal_health_default_exec:s0 file execute
+u:r:init:s0 u:object_r:hal_health_default_exec:s0 file read
+u:r:init:s0 u:object_r:hal_health_default_exec:s0 file open
+u:r:init:s0 u:r:hal_health_default:s0 process transition
+u:r:hal_health_default:s0 u:object_r:hal_health_default_exec:s0 file entrypoint
+u:r:hal_health_default:s0 u:object_r:hal_health_default_exec:s0 file map
+# the linker in the product section: linkerconfig, /product dirs, LLNDK from /system and APEX
+u:r:hal_health_default:s0 u:object_r:linkerconfig_file:s0 file read
+u:r:hal_health_default:s0 u:object_r:system_file:s0 dir search
+u:r:hal_health_default:s0 u:object_r:system_linker_exec:s0 file execute
+u:r:hal_health_default:s0 u:object_r:system_lib_file:s0 file map
+u:r:hal_health_default:s0 u:object_r:system_lib_file:s0 file execute
+u:r:hal_health_default:s0 u:object_r:apex_mnt_dir:s0 dir search
+# what the HAL does, as the vendor binary does it
+u:r:hal_health_default:s0 u:object_r:hal_health_service:s0 service_manager add
+u:r:hal_health_default:s0 u:r:servicemanager:s0 binder call
+u:r:hal_health_default:s0 u:object_r:sysfs_batteryinfo:s0 file read
+u:r:hal_health_default:s0 u:r:hal_health_default:s0 capability2 wake_alarm
+u:r:hal_health_default:s0 u:r:hal_health_default:s0 capability2 block_suspend
+u:r:hal_health_default:s0 u:object_r:kmsg_device:s0 chr_file write
+u:r:hal_health_default:s0 u:object_r:fs_bpf_vendor:s0 file read
+# its client
+u:r:system_server:s0 u:object_r:hal_health_service:s0 service_manager find
+u:r:system_server:s0 u:r:hal_health_default:s0 binder call
+# the domain stays as narrow as the vendor's: no reading of other /system or /product files
+-u:r:hal_health_default:s0 u:object_r:system_file:s0 file read

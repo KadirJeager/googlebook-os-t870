@@ -1,0 +1,85 @@
+#!/bin/sh
+# Image tools of the Googlebook OS pipeline, for the on-device updater, in the Linux environment.
+# The computer-side pipeline uses erofs-utils 1.9.4 and android-tools 37.0.0p1's e2fsdroid;
+# Debian 13 ships erofs-utils 1.8.6 and no e2fsdroid for arm64, so both are built here from
+# their release sources, pinned by SHA-256, into /usr/local. zipalign, mke2fs, e2fsck and a C
+# compiler come from Debian. Idempotent: does nothing when the installed set is current.
+#
+#   gbos-linux run -- googlebook-imaj-araclari          install / update
+#   gbos-linux run -- googlebook-imaj-araclari --check  exit 0 if installed and current
+set -eu
+
+EROFS_VERSION=1.9.4
+EROFS_URL=https://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs-utils.git/snapshot/erofs-utils-$EROFS_VERSION.tar.gz
+EROFS_SHA256=7d135aa2550326a5acf20f53c518aea5a8900015ce50700044e40f818c31dd80
+ATOOLS_VERSION=37.0.0p1
+ATOOLS_URL=https://github.com/nmeum/android-tools/releases/download/$ATOOLS_VERSION/android-tools-$ATOOLS_VERSION.tar.xz
+ATOOLS_SHA256=2c6de1abe16b211c7d9f59276217e14fd9e0e18b20e331d3c84358f5dffd576e
+
+STAMP=/usr/local/lib/googlebook/imaj-araclari
+WANT="erofs-utils $EROFS_VERSION $EROFS_SHA256
+android-tools $ATOOLS_VERSION $ATOOLS_SHA256"
+
+current() {
+    [ -f "$STAMP" ] && [ "$(cat "$STAMP")" = "$WANT" ] &&
+        for t in mkfs.erofs fsck.erofs dump.erofs e2fsdroid; do [ -x "/usr/local/bin/$t" ] || return 1; done
+}
+
+if [ "${1:-}" = "--check" ]; then
+    current
+    exit $?
+fi
+if [ "$(id -u)" != 0 ]; then
+    echo "googlebook-imaj-araclari: run as root (gbos-linux run -- googlebook-imaj-araclari)" >&2
+    exit 1
+fi
+if current; then
+    echo "image tools current: erofs-utils $EROFS_VERSION, e2fsdroid ($ATOOLS_VERSION)"
+    exit 0
+fi
+
+export DEBIAN_FRONTEND=noninteractive
+echo "== Debian packages"
+apt-get update
+apt-get install -y --no-install-recommends \
+    build-essential autoconf automake libtool pkgconf curl ca-certificates xz-utils \
+    e2fsprogs zipalign \
+    liblz4-dev liblzma-dev zlib1g-dev libzstd-dev uuid-dev libselinux1-dev \
+    cmake ninja-build libbrotli-dev libpcre2-dev libusb-1.0-0-dev libprotobuf-dev \
+    protobuf-compiler libgtest-dev libfmt-dev
+
+work=$(mktemp -d /var/tmp/googlebook-imaj-araclari.XXXXXX)
+trap 'rm -rf "$work"' EXIT
+fetch() {  # fetch URL SHA256 FILE
+    curl -fsSL --retry 3 -o "$3" "$1"
+    echo "$2  $3" | sha256sum -c --quiet -
+}
+jobs=$(nproc)
+
+echo "== erofs-utils $EROFS_VERSION"
+fetch "$EROFS_URL" "$EROFS_SHA256" "$work/erofs.tar.gz"
+tar -xzf "$work/erofs.tar.gz" -C "$work"
+(
+    cd "$work/erofs-utils-$EROFS_VERSION"
+    ./autogen.sh
+    ./configure --prefix=/usr/local --enable-lz4 --enable-lzma --with-zlib --with-libzstd \
+        --with-selinux --with-uuid --disable-fuse
+    make -j"$jobs"
+    make install
+)
+
+echo "== e2fsdroid (android-tools $ATOOLS_VERSION)"
+fetch "$ATOOLS_URL" "$ATOOLS_SHA256" "$work/android-tools.tar.xz"
+tar -xJf "$work/android-tools.tar.xz" -C "$work"
+(
+    cd "$work/android-tools-$ATOOLS_VERSION"
+    cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+    ninja -C build -j"$jobs" e2fsdroid
+    install -m 755 build/vendor/e2fsdroid /usr/local/bin/e2fsdroid
+)
+
+mkdir -p "$(dirname "$STAMP")"
+printf '%s\n' "$WANT" > "$STAMP"
+echo "image tools installed:"
+mkfs.erofs -V 2>&1 | head -1
+command -v e2fsdroid mke2fs e2fsck zipalign cc

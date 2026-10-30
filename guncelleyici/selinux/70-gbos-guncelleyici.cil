@@ -1,0 +1,171 @@
+;; Googlebook OS updater (T870-araclar/guncelleyici). In the image:
+;; selinux/politika/plat/70-gbos-guncelleyici.cil, appended by yamalar/selinux.py.
+;;
+;;   gbos_guncelleyici        the service gbos-guncelleyicid, gbos-guncelleyici-is (its operations
+;;                            and the boot guard), started by init
+;;   gbos_guncelleyici_exec   /system/bin/gbos-guncelleyicid, /system/bin/gbos-guncelleyici-is
+;;   gbos_ota_data_file       /data/gbos-ota: image sets, state for the app
+;;   gbos_ota_cache_file      /cache/gbos: what recovery reads (operation, block maps, packages)
+;;   gbos_guncelleyici_socket /dev/socket/gbos_guncelleyici (the node; the socket is the domain's)
+;;
+;; The domain is enforcing. Block maps are made by AOSP's uncrypt and the userdata checkpoint is
+;; driven through vdc, each in its own domain (exec transitions below), so this domain never
+;; writes the userdata device nor talks to vold itself. It reads super (to keep the running
+;; images) and the userdata device (to read every image back through its block map the way
+;; recovery will), and writes recovery's command file and sys.powerctl. Validated in Enforcing on
+;; the Android 37 test emulator (guncelleyici/emulator/senaryo.sh).
+
+(type gbos_guncelleyici)
+(roletype object_r gbos_guncelleyici)
+(typeattributeset domain (gbos_guncelleyici))
+(typeattributeset coredomain (gbos_guncelleyici))
+;; apps run with MLS categories: connecting to the service (and its replies) crosses levels, as
+;; for gbos_linuxd
+(typeattributeset mlstrustedsubject (gbos_guncelleyici))
+
+(type gbos_guncelleyici_exec)
+(roletype object_r gbos_guncelleyici_exec)
+(typeattributeset file_type (gbos_guncelleyici_exec))
+(typeattributeset exec_type (gbos_guncelleyici_exec))
+(typeattributeset system_file_type (gbos_guncelleyici_exec))
+
+(type gbos_ota_data_file)
+(roletype object_r gbos_ota_data_file)
+(typeattributeset file_type (gbos_ota_data_file))
+(typeattributeset data_file_type (gbos_ota_data_file))
+(typeattributeset core_data_file_type (gbos_ota_data_file))
+
+(type gbos_ota_cache_file)
+(roletype object_r gbos_ota_cache_file)
+(typeattributeset file_type (gbos_ota_cache_file))
+
+(type gbos_guncelleyici_socket)
+(roletype object_r gbos_guncelleyici_socket)
+(typeattributeset file_type (gbos_guncelleyici_socket))
+(typeattributeset coredomain_socket (gbos_guncelleyici_socket))
+(typeattributeset mlstrustedobject (gbos_guncelleyici_socket))
+
+;; ---- init: starts the service and the boot guard (seclabel), creates the directories and the
+;; socket
+(allow init gbos_guncelleyici (process (transition rlimitinh siginh)))
+(dontaudit init gbos_guncelleyici (process (noatsecure)))
+(allow init gbos_guncelleyici_exec (file (read open getattr execute map)))
+(allow gbos_guncelleyici gbos_guncelleyici_exec (file (read open getattr execute map entrypoint execute_no_trans)))
+(allow init gbos_guncelleyici_socket (sock_file (create setattr unlink getattr)))
+(allow init gbos_guncelleyici (unix_stream_socket (create bind setopt getattr setattr)))
+(allow init gbos_ota_data_file (dir (create search getattr setattr open read write add_name relabelto)))
+(allow init gbos_ota_cache_file (dir (create search getattr setattr open read write add_name relabelto)))
+(allow init gbos_ota_cache_file (file (getattr relabelto)))
+(allow init gbos_ota_data_file (file (getattr relabelto)))
+
+;; ---- the domain itself: a root shell script and a small daemon
+;; No dac_override/dac_read_search (platform neverallow): its own files are root's; recovery's
+;; command file directory (system:cache 0770) and packages.list (system:package_info 0640) are
+;; reached through the service's groups cache and package_info (gbos-guncelleyici.rc).
+(allow gbos_guncelleyici self (capability (chown fowner fsetid kill)))
+(allow gbos_guncelleyici self (process (fork sigchld signal sigkill getsched getpgid setpgid getattr)))
+(allow gbos_guncelleyici self (fifo_file (read write getattr ioctl open)))
+(allow gbos_guncelleyici self (unix_stream_socket (create connect read write getattr getopt setopt shutdown accept listen)))
+(allow gbos_guncelleyici gbos_guncelleyici (fd (use)))
+(allow gbos_guncelleyici shell_exec (file (read open getattr execute map)))
+(allow gbos_guncelleyici toolbox_exec (file (read open getattr execute execute_no_trans map)))
+(allow gbos_guncelleyici system_file (file (read open getattr execute execute_no_trans map)))
+(allow gbos_guncelleyici system_file (dir (search getattr read open)))
+(allow gbos_guncelleyici system_file (lnk_file (read getattr)))
+(allow gbos_guncelleyici rootfs (dir (search getattr)))
+(allow gbos_guncelleyici devpts (chr_file (read write getattr ioctl)))
+(allow gbos_guncelleyici null_device (chr_file (read write open getattr ioctl)))
+(allow gbos_guncelleyici proc_meminfo (file (read open getattr)))
+;; boot id in the operation lock
+(allow gbos_guncelleyici proc_random (dir (search)))
+(allow gbos_guncelleyici proc_random (file (read open getattr)))
+;; logcat (toybox log)
+(allow gbos_guncelleyici logdw_socket (sock_file (write)))
+(allow gbos_guncelleyici logd (unix_dgram_socket (sendto)))
+;; properties it reads and sys.powerctl (reboot into recovery)
+(allow gbos_guncelleyici build_prop (file (read open getattr map)))
+(allow gbos_guncelleyici boot_status_prop (file (read open getattr map)))
+(allow gbos_guncelleyici system_prop (file (read open getattr map)))
+(allow gbos_guncelleyici locale_prop (file (read open getattr map)))
+(allow gbos_guncelleyici vold_prop (file (read open getattr map)))
+(allow gbos_guncelleyici userdebug_or_eng_prop (file (read open getattr map)))
+(allow gbos_guncelleyici powerctl_prop (file (read open getattr map)))
+(allow gbos_guncelleyici property_socket (sock_file (write)))
+(allow gbos_guncelleyici init (unix_stream_socket (connectto)))
+(allow gbos_guncelleyici powerctl_prop (property_service (set)))
+;; persist.vold.dont_commit_checkpoint: the updater holds vold's checkpoint commit during a trial
+;; and releases it for a healthy version (gbos-guncelleyici-is hold_commit/release_commit); vold
+;; reads it in cp_commitChanges
+(type gbos_vold_commit_prop)
+(roletype object_r gbos_vold_commit_prop)
+(typeattributeset property_type (gbos_vold_commit_prop))
+(typeattributeset system_property_type (gbos_vold_commit_prop))
+(allow gbos_guncelleyici gbos_vold_commit_prop (property_service (set)))
+(allow gbos_guncelleyici gbos_vold_commit_prop (file (read open getattr map)))
+(allow vold gbos_vold_commit_prop (file (read open getattr map)))
+;; the caller check: packages.list (app id of com.gbos.guncelleyici)
+(allow gbos_guncelleyici packages_list_file (file (read open getattr)))
+(allow gbos_guncelleyici system_data_root_file (dir (search getattr)))
+(allow gbos_guncelleyici system_data_file (dir (search getattr)))
+;; its data: /data/gbos-ota
+(allow gbos_guncelleyici gbos_ota_data_file (dir (create search getattr setattr open read write add_name remove_name rename rmdir reparent)))
+(allow gbos_guncelleyici gbos_ota_data_file (file (create read write open getattr setattr append unlink rename lock ioctl map)))
+;; the kit unpacked from the image (gbos-guncelleyici-is unpack_kit) holds links: kit/mica-imaj
+(allow gbos_guncelleyici gbos_ota_data_file (lnk_file (create read getattr setattr unlink rename)))
+(allow gbos_guncelleyici labeledfs (filesystem (getattr)))
+;; /cache: its own directory and recovery's command file
+(allow gbos_guncelleyici cache_file (dir (search getattr open read)))
+(allow gbos_guncelleyici gbos_ota_cache_file (dir (create search getattr setattr open read write add_name remove_name rename rmdir)))
+(allow gbos_guncelleyici gbos_ota_cache_file (file (create read write open getattr setattr append unlink rename lock)))
+(allow gbos_guncelleyici cache_recovery_file (dir (search getattr open read write add_name remove_name)))
+(allow gbos_guncelleyici cache_recovery_file (file (create read write open getattr setattr unlink rename)))
+;; super (the running images, the LP header) and userdata (reading back through the maps)
+(allow gbos_guncelleyici block_device (dir (search getattr)))
+(allow gbos_guncelleyici block_device (lnk_file (read getattr)))
+(allow gbos_guncelleyici super_block_device (blk_file (read open getattr ioctl)))
+(allow gbos_guncelleyici userdata_block_device (blk_file (read open getattr ioctl)))
+
+;; ---- callers of the service: the app (priv-app) and adb shell
+(allow priv_app_all gbos_guncelleyici_socket (sock_file (write)))
+(allow priv_app_all gbos_guncelleyici (unix_stream_socket (connectto)))
+(allow shell gbos_guncelleyici_socket (sock_file (write)))
+(allow shell gbos_guncelleyici (unix_stream_socket (connectto)))
+
+;; ---- uncrypt: block maps of the images in /data/gbos-ota, written to /cache/gbos
+(allow gbos_guncelleyici uncrypt_exec (file (read open getattr execute map)))
+(allow gbos_guncelleyici uncrypt (process (transition)))
+(typetransition gbos_guncelleyici uncrypt_exec process uncrypt)
+;; the secure-exec flags are not granted (platform practice); their check is not logged
+(dontaudit gbos_guncelleyici uncrypt (process (rlimitinh siginh noatsecure)))
+(allow uncrypt gbos_guncelleyici (fd (use)))
+(allow uncrypt gbos_guncelleyici (fifo_file (write getattr)))
+(allow uncrypt gbos_guncelleyici (process (sigchld)))
+(allow uncrypt system_data_root_file (dir (search getattr)))
+(allow uncrypt gbos_ota_data_file (dir (search getattr)))
+(allow uncrypt gbos_ota_data_file (file (read write open getattr ioctl)))
+(allow uncrypt cache_file (dir (search getattr)))
+(allow uncrypt gbos_ota_cache_file (dir (search getattr open read write add_name remove_name)))
+(allow uncrypt gbos_ota_cache_file (file (create read write open getattr setattr append unlink rename)))
+
+;; ---- vdc: the userdata checkpoint (startCheckpoint, needsCheckpoint, commitChanges)
+(allow gbos_guncelleyici vdc_exec (file (read open getattr execute map)))
+(allow gbos_guncelleyici vdc (process (transition)))
+(typetransition gbos_guncelleyici vdc_exec process vdc)
+(dontaudit gbos_guncelleyici vdc (process (rlimitinh siginh noatsecure)))
+(allow vdc gbos_guncelleyici (fd (use)))
+(allow vdc gbos_guncelleyici (fifo_file (write getattr)))
+(allow vdc gbos_guncelleyici (process (sigchld)))
+(allow vdc gbos_ota_cache_file (file (append getattr)))
+
+;; ---- the tablet-side preparation runs in the Linux environment (gbos-linux run --bind)
+(allow gbos_guncelleyici gbos_linux_socket (sock_file (write)))
+(allow gbos_guncelleyici gbos_linuxd (unix_stream_socket (connectto)))
+(allow gbos_linuxd gbos_guncelleyici (fd (use)))
+(allow gbos_linux gbos_guncelleyici (fd (use)))
+(allow gbos_linux gbos_guncelleyici (fifo_file (read write getattr ioctl)))
+(allow gbos_linuxd gbos_ota_cache_file (file (append getattr)))
+(allow gbos_linux gbos_ota_cache_file (file (append getattr)))
+(allow gbos_linuxd gbos_ota_data_file (dir (search getattr read open mounton)))
+(allow gbos_linux gbos_ota_data_file (dir (create search getattr setattr open read write add_name remove_name rename rmdir reparent)))
+(allow gbos_linux gbos_ota_data_file (file (create read write open getattr setattr append unlink rename lock ioctl map)))
+(allow gbos_linux gbos_ota_data_file (lnk_file (create read getattr unlink rename)))

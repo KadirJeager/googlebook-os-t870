@@ -1,0 +1,13 @@
+# Googlebook Linux environment: root service behind the Terminal app and `gbos-linux run`.
+# Source: T870-araclar/terminal (BENIOKU.md).
+on post-fs-data
+    mkdir /data/gbos-linux 0711 root root
+
+service gbos_linuxd /system/bin/gbos-linuxd
+    class main
+    user root
+    group root inet net_raw
+    # The socket object takes the service domain (gbos_linuxd), the node /dev/socket/gbos_linux
+    # its file_contexts label (gbos_linux_socket), as with netd and dnsproxyd.
+    socket gbos_linux stream 0666 root root
+    seclabel u:r:gbos_linuxd:s0

@@ -1,0 +1,90 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: KadirJeager <KadirJeager@users.noreply.github.com>
+Date: Mon, 26 Oct 2026 23:00:00 +0300
+Subject: [PATCH] input: hall_logical: report tablet mode while no keyboard is
+ attached
+
+The desktop framework does not decide between laptop and tablet from
+the input devices alone. Its device state provider maps SW_TABLET_MODE
+and SW_LID onto CLOSED, OPEN and TABLET, and the window manager keeps
+the desktop (freeform) layout in OPEN even with no keyboard or
+touchpad. hall_logical cleared SW_TABLET_MODE when the keyboard was
+detached, so a bare tablet stayed in the laptop state, while folding
+the cover back reached the tablet state.
+
+Report SW_TABLET_MODE whenever no keyboard cover is attached, the same
+as other detachables do (cros_cbas, surface tabletsw). hall_logical
+now follows ATTACHED as well as DETACHED; both are replayed on
+registration once the pogo driver knows the connection state. Until
+ATTACHED arrives, including a boot without a keyboard, where the pogo
+driver sends nothing, the device is a slate. SW_LID still follows the
+attached cover only.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/input/keyboard/hall_ic_logical.c | 29 +++++++++++++++++++-----
+ 1 file changed, 23 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/input/keyboard/hall_ic_logical.c b/drivers/input/keyboard/hall_ic_logical.c
+index efdc9d3a9..08f75041a 100644
+--- a/drivers/input/keyboard/hall_ic_logical.c
++++ b/drivers/input/keyboard/hall_ic_logical.c
+@@ -40,6 +40,8 @@ struct hall_drvdata {
+ };
+ 
+ static int hall_logical_status = 0;
++/* A keyboard cover is attached; false until the pogo driver says so. */
++static bool hall_logical_attached;
+ 
+ static ssize_t hall_logical_detect_show(struct device *dev,
+ 				struct device_attribute *attr, char *buf)
+@@ -56,19 +58,23 @@ static ssize_t hall_logical_detect_show(struct device *dev,
+ static DEVICE_ATTR(hall_logical_detect, 0444, hall_logical_detect_show, NULL);
+ 
+ /*
+- * The logical hall state maps onto two standard switches:
+- *   CLOSE (cover over the screen)   -> SW_LID = 1
+- *   BACK  (cover folded behind it)  -> SW_TABLET_MODE = 1
+- *   OPEN  (laptop position, or no cover attached) -> both 0
++ * The cover state maps onto two standard switches:
++ *   CLOSE (cover over the screen)                 -> SW_LID = 1
++ *   BACK  (cover folded behind it), or no cover   -> SW_TABLET_MODE = 1
++ *   OPEN  (laptop position)                       -> both 0
++ * Without a keyboard the device is a slate, as on other detachables
++ * (cros_cbas, surface tabletsw): the desktop framework derives its
++ * device state from SW_TABLET_MODE and stays in the laptop state while
++ * it is 0, whether or not a keyboard is present.
+  * The stock driver reports the folded-back state with the vendor switch
+  * SW_HALL_LOGICAL that only the vendor framework understands;
+  * SW_TABLET_MODE is the switch Android's InputManager tracks.
+  */
+ static void hall_logical_report(struct input_dev *input)
+ {
+-	input_report_switch(input, SW_LID,
++	input_report_switch(input, SW_LID, hall_logical_attached &&
+ 			hall_logical_status == LOGICAL_HALL_CLOSE);
+-	input_report_switch(input, SW_TABLET_MODE,
++	input_report_switch(input, SW_TABLET_MODE, !hall_logical_attached ||
+ 			hall_logical_status == LOGICAL_HALL_BACK);
+ 	input_sync(input);
+ }
+@@ -98,8 +104,19 @@ static int logical_hallic_notifier_handler(struct notifier_block *nb,
+ 	struct pogo_data_struct pogo_data =  *(struct pogo_data_struct *)data;
+ 	int hall_status;
+ 
++	/*
++	 * ATTACHED and DETACHED are also replayed on registration once the
++	 * pogo driver knows the connection state. Before that, and when no
++	 * keyboard is found at boot, nothing is sent and the device stays a
++	 * slate.
++	 */
+ 	switch (action) {
++	case POGO_NOTIFIER_ID_ATTACHED:
++		hall_logical_attached = true;
++		hall_logical_report(logical_hall_dev->input);
++		break;
+ 	case POGO_NOTIFIER_ID_DETACHED:
++		hall_logical_attached = false;
+ 		hall_logical_status = LOGICAL_HALL_OPEN;
+ 		hall_logical_report(logical_hall_dev->input);
+ 		break;

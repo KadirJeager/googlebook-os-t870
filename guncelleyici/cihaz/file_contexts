@@ -1,0 +1,7 @@
+# --- GBOS_GUNCELLEYICI BEGIN: Googlebook OS updater (T870-araclar/guncelleyici) ---
+/system/bin/gbos-guncelleyicid      u:object_r:gbos_guncelleyici_exec:s0
+/system/bin/gbos-guncelleyici-is    u:object_r:gbos_guncelleyici_exec:s0
+/data/gbos-ota(/.*)?                u:object_r:gbos_ota_data_file:s0
+/cache/gbos(/.*)?                   u:object_r:gbos_ota_cache_file:s0
+/dev/socket/gbos_guncelleyici       u:object_r:gbos_guncelleyici_socket:s0
+# --- GBOS_GUNCELLEYICI END ---

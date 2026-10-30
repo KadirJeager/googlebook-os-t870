@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Googlebook OS updater app: update notifications need no prompt, as on Pixels. -->
+<exceptions>
+    <exception package="com.gbos.guncelleyici">
+        <permission name="android.permission.POST_NOTIFICATIONS" fixed="false" />
+    </exception>
+</exceptions>

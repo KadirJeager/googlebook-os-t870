@@ -1,0 +1,30 @@
+# Googlebook OS on SM-T870: the tablet's health HAL with the Samsung battery driver's
+# state-of-health (fg_asoc) and cycle-count (battery_cycle) nodes configured
+# (T870-araclar/pil-sagligi, yamalar/pil_sagligi.py).
+#
+# It replaces the LineageOS vendor service vendor.health-samsung
+# (/vendor/etc/init/android.hardware.health-service.samsung.rc). An "override" cannot do that
+# from /product: init refuses to override a service "across the treble boundary" (vendor and
+# odm files are parsed in the vendor_init subcontext, product files are not;
+# system/core/init/service_parser.cpp EndSection). Instead the vendor service is stopped before
+# its class starts ("stop" on a service that has not started yet keeps class_start from
+# starting it, init/service.cpp StopOrReset) and this one serves IHealth/default in its place,
+# with the same class, user, groups, capabilities and files. vendor.charger (off-mode
+# charging, class charger) is not touched and keeps running the vendor binary.
+
+on early-init
+    stop vendor.health-samsung
+
+service gbos.health-samsung /product/bin/hw/android.hardware.health-service.samsung-gbos
+    class hal
+    user system
+    group system
+    capabilities WAKE_ALARM BLOCK_SUSPEND
+    file /dev/kmsg w
+
+# vndservicemanager restarts the whole hal class when it restarts ("onrestart class_restart hal",
+# without --only-enabled), which starts the stopped vendor service too. Its registration of
+# IHealth/default would replace this one; stop it again and register this one anew.
+on property:init.svc.vendor.health-samsung=running
+    stop vendor.health-samsung
+    restart gbos.health-samsung

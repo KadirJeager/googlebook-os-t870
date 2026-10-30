@@ -1,0 +1,11 @@
+# The LineageOS build this module's vendor HAL was checked against: the zip, and the SHA-256 of
+# the vendor files the port mirrors (testler compare the zip and $WORK/lineage/bolumler with it).
+lineage-24.0-20261011-nightly-gts7lwifi-signed.zip  sha256=0417b278827346c8a8346b5fa9695f612e96a132ceea40ae8227df3c0028019a  bolum=vendor
+vendor/bin/hw/android.hardware.camera.provider-service.samsung  026481313a362e83b32190c60991112b0292999c38ce4c001bbbf4a48ce4a36c
+vendor/bin/hw/android.hardware.sensors-service.samsung-multihal  157a2b5b53c9c712504501b499e846f90efaf2611f238ffab3d61019177067fa
+vendor/etc/init/android.hardware.camera.provider-service.samsung.rc  c7008f9707ff3cbdff64d98c04bdc4657bda3f7fac6bda3d9d30ffb127360ee0
+vendor/etc/init/android.hardware.sensors-service.samsung-multihal.rc  36dcc8168e0110a3669c862d3b30a5b97ea5ec220044f9a7008c76f39e756d3b
+vendor/etc/sensors/hals.conf  bbcfd5f5ce2327a07fb0869ace55618e510c38f61c3380132a7c00bc55e7c72e
+vendor/etc/vintf/manifest/android.hardware.camera.provider-service.samsung.xml  893494c6ce8266be07671eb7303e696ad736c87f52e33d8a2724dc5131d6ee3c
+vendor/etc/vintf/manifest/android.hardware.sensors-samsung-multihal.xml  9394ad1924f8fa6699c505b47f2e01dc3acb00e2aa4e695aacf64ec733c21e99
+vendor/lib64/camera.device-impl.samsung.so  cdc8dce14f071469a63c9cf833abbd56c2776d685ea3b8849e26347c50cad691

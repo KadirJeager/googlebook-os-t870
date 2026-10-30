@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/surface_container">
+
+    <LinearLayout
+        android:id="@+id/tab_bar"
+        android:layout_width="match_parent"
+        android:layout_height="44dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="6dp"
+        android:paddingEnd="4dp">
+
+        <HorizontalScrollView
+            android:id="@+id/tab_scroll"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:fillViewport="false"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:id="@+id/tabs"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:gravity="center_vertical"
+                android:orientation="horizontal" />
+        </HorizontalScrollView>
+
+        <ImageButton
+            android:id="@+id/add_tab"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="@drawable/round_button"
+            android:contentDescription="@string/new_tab"
+            android:src="@drawable/ic_add"
+            android:tooltipText="@string/new_tab" />
+
+        <ImageButton
+            android:id="@+id/menu_button"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="@drawable/round_button"
+            android:contentDescription="@string/menu"
+            android:src="@drawable/ic_more"
+            android:tooltipText="@string/menu" />
+    </LinearLayout>
+
+    <FrameLayout
+        android:id="@+id/content"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <com.termux.view.TerminalView
+            android:id="@+id/terminal"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@color/terminal_background"
+            android:paddingStart="8dp"
+            android:paddingEnd="4dp"
+            android:paddingTop="4dp"
+            android:focusable="true"
+            android:focusableInTouchMode="true"
+            android:scrollbarThumbVertical="@color/outline"
+            android:visibility="gone" />
+
+        <!-- Visual bell: a brief tint over the terminal (the terminal's own alpha never changes). -->
+        <View
+            android:id="@+id/bell_flash"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:alpha="0"
+            android:background="@color/on_surface"
+            android:clickable="false"
+            android:focusable="false"
+            android:importantForAccessibility="no"
+            android:visibility="gone" />
+
+        <include
+            android:id="@+id/setup"
+            layout="@layout/setup"
+            android:visibility="gone" />
+
+        <ProgressBar
+            android:id="@+id/loading"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:indeterminate="true" />
+    </FrameLayout>
+
+    <HorizontalScrollView
+        android:id="@+id/extra_keys_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scrollbars="none"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:id="@+id/extra_keys"
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:orientation="horizontal"
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp" />
+    </HorizontalScrollView>
+</LinearLayout>

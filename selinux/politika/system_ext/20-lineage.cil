@@ -1,0 +1,5 @@
+;; Rules LineageOS 24's own platform gave the tablet's vendor domains that mica's platform does not
+;; have (found by comparing what vendor domains may do under LineageOS's and our compiled policy;
+;; see yamalar/selinux.py dogrula). persist.vendor.camera.* is read by the camera HAL.
+(allow hal_camera vendor_persist_camera_prop (file (read getattr map open)))
+(allow hal_cas_server servicemanager (fd (use)))

@@ -1,0 +1,26 @@
+# Upstream sources of the natural-orientation HAL build (araclar/kaynak-getir.py; BENIOKU.md "Kaynaklar").
+# name  git-url  commit  comma-separated-paths  content-sha256
+#
+# LineageOS lineage-24.0, as of the build the tablet's vendor partition comes from
+# (lineage-24.0-20261011-nightly-gts7lwifi): each commit is the branch head before 2026-10-11.
+hardware_samsung https://github.com/LineageOS/android_hardware_samsung 4c4e16f32a19c2cc706b5d2052e22d5ea5fa94f5 aidl/sensors,aidl/camera ec22c883e69d4f0b1f1a219e24bebf04be9a140f4e87c6adb6d35f0440fbe083
+hardware_interfaces https://github.com/LineageOS/android_hardware_interfaces 1b92b77fe1f2f2c820c51b0b1e366c17d6b9911b sensors/1.0,sensors/2.0,sensors/2.1,sensors/aidl,sensors/common,camera/common,camera/device/aidl,camera/provider/aidl,camera/metadata/aidl,common/aidl,common/fmq/aidl,common/support,graphics/common/aidl,graphics/common/1.0,graphics/common/1.1,graphics/common/1.2,graphics/mapper/4.0 512702f67d2c3ae0e33a99454697761a20bb7aecc173ca5d5b6d7022c298a71a
+system_core https://github.com/LineageOS/android_system_core 7c3f32fe89c52b4176fd288ba5bb4f907809c202 libcutils,libutils,libsystem d6365a0f5f0a000e41954def524b95b3eac35e26e7293054b94f52e07943d986
+libfmq https://github.com/LineageOS/android_system_libfmq f727482ff0c6a26b4c64c5106c62c176415b2d81 include,base a9f3ce1696f8814b551bb024fd4bdcc985f893c65f8024a8085e11c0ae7cb4a2
+frameworks_native https://github.com/LineageOS/android_frameworks_native 46018f54b42489de960c62c3db9de131abce43ea libs/binder/ndk/include_cpp,libs/binder/ndk/include_ndk,libs/binder/ndk/include_platform,libs/ui/include,libs/ui/include_types,libs/ui/include_vndk,libs/nativewindow/include,libs/nativebase/include,libs/arect/include,libs/gralloc/types/include,libs/math/include,include d1ca3c804e88d34aab7292b53479c1c5c61c5af575e6c0094ee3eb85281c05cc
+system_media https://github.com/LineageOS/android_system_media a6e89ff7fdee50366c2790e09531fd94f81e522b camera/include,private/camera/include 00fb4f5e03c4ade900bb4c0d66d6f54e0562e7ab4206fd901278e52c4b8ae9c0
+libhardware https://github.com/LineageOS/android_hardware_libhardware d7f13275b6a210f56110b46609a2e83b2feccd99 include_all 0383c95ea69992c59572e0072f2bced90677a148eaf4c4174ec175921e329aa9
+# AOSP android-17.0.0_r1 (LineageOS does not fork these)
+libhardware_legacy https://android.googlesource.com/platform/hardware/libhardware_legacy 2a073cd42ec822914ed4e680e7b708485d3a172b include 84e6c4a76600a39c6c2e244891adef2ad6d9819a831e120f53e2b859216a171e
+libhidl https://android.googlesource.com/platform/system/libhidl 061055fc4dad78e5d25a77d9217001794656f16b base,transport 463aeec8d8ddcb34bb11ce63d1de6c25f6a54d41ef0b00bfa506367bf83114c5
+libhwbinder https://android.googlesource.com/platform/system/libhwbinder 2f5282448223b97c541181a5b94a05c2ac17ff17 include 369b635d0a4edc9e60e8834b6401443e57d60a85915e41678b76c6411617f186
+libbase https://android.googlesource.com/platform/system/libbase fef4173e19d97cd4b4fc09a06bccbf800d0d3937 . 5cf1018910700795b4144431dbeedb6c378f7d6a5b65fde80f34eb5753f192f5
+logging https://android.googlesource.com/platform/system/logging d35ba620451b28512f46ebb5421f783fd77968d5 liblog 567e29e64e79549ad671c7e7b1aa243257af283c03304091dccd2f3333ab3367
+fmtlib https://android.googlesource.com/platform/external/fmtlib e3bef0ad2e9d4ea38ba3b4b2b59e0514f7025fed include,src 43e483aeda02e0dc02bffc762180cca708314c4568592969cbba391f5d92a837
+hidl_tools https://android.googlesource.com/platform/system/tools/hidl 5d0e05e6535fea94a674a359102bdd42944714f4 . 012d80d1067bcddcb2e6f570d134fb5f60cd17ed1e1066f3c01223a52b6e5bb5
+libexif https://android.googlesource.com/platform/external/libexif e180c53a25cc0f26e6e0caf4a2708c41b8ec5214 libexif ef5a205f1ca25577bd5300c165581e374c7cb574fbeee2f85347894cce68bbc7
+bionic https://android.googlesource.com/platform/bionic 06356e41c5ed7b12220b24c05ba4fdb873b126a7 libc/platform/bionic 8c7ee96931b0bca3e30c73943d9a3ba28a0f02f95ad4d9e13d6710c9cbf6d15e
+# The platform libc++ headers (Soong: prebuilts/clang/host/linux-x86/soong/clangprebuilts.go,
+# android_libc++/platform/<arch>) of the clang the release builds with (build/soong
+# cc/config/global.go ClangDefaultVersion clang-r584948, release build flag: clang-r584948b).
+clang_prebuilts https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 29182889399818f97baa65ea238c80e8117981eb clang-r584948b/include/c++/v1,clang-r584948b/android_libc++/platform/aarch64/include 32a4709f19766ad63d9183ddf88a60181cb7993aead98072cdb44bbb8a900b7c

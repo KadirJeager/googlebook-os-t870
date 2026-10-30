@@ -1,0 +1,6 @@
+# Googlebook OS "Tablet modu" (T870-araclar/tablet-modu). The quick settings tile runs as the
+# user's app uid; the kernel creates sec_keypad/tablet_mode root-only (0644). SELinux limits
+# writers to priv-apps (71-gbos-tablet-modu.cil). Without kernel patch 0002 the node is missing,
+# chmod fails harmlessly and the app keeps its tile hidden.
+on boot
+    chmod 0666 /sys/devices/virtual/sec/sec_keypad/tablet_mode

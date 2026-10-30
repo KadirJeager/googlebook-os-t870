@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Googlebook Terminal (T870-araclar/terminal): privileged permissions it requests. -->
+<permissions>
+    <privapp-permissions package="com.gbos.terminal">
+        <!-- suggests the Android user's name as the Linux user name -->
+        <permission name="android.permission.QUERY_USERS" />
+    </privapp-permissions>
+</permissions>

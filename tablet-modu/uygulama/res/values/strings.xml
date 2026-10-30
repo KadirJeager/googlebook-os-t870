@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="uygulama_adi">Tablet mode</string>
+    <string name="kutucuk_adi">Tablet mode</string>
+    <string name="kutucuk_acik">Keyboard off</string>
+    <string name="kutucuk_kapali">Follows the cover</string>
+    <string name="kutucuk_yok">Not supported</string>
+</resources>

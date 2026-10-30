@@ -1,0 +1,67 @@
+{
+ "release": {
+  "channel": "STABLE",
+  "device": "mica",
+  "file": "recovery.zip",
+  "filesize": 19230966272,
+  "manufacturer": "Dell",
+  "md5": "2b75ca43b008bf0f2a72a717dd5642f1",
+  "model": "XPS Googlebook",
+  "name": "XPS Googlebook",
+  "url": "https://dl.google.com/device/recovery/mica-user/16471258/recovery.zip",
+  "zipfilesize": 1,
+  "buildexploreruri": "",
+  "buildidentifier": "16471258_CL3B.260622.273.R1",
+  "target": "mica-user",
+  "branch": "arsp-26Q3-desktop-release",
+  "dateupdated": "2026-10-05",
+  "previousVersionGeneration": 1791211069242011
+ },
+ "note": "Bu sürümün imajları eski indir_ve_ayikla.py ile sabit ofsetlerle çıkarıldı; system/system_ext/product/vendor ofsetleri LP meta verisiyle doğrulandı. system_dlkm_a/vendor_dlkm_a o betikte 8192 bayt kaymış ve BOZUK (EROFS süper bloğu yok); kullanılmıyorlar.",
+ "images": {
+  "system_a": {
+   "bytes": 1081446400,
+   "sha256": "9d855c83aa359a245d2141afbbdd655d69be38ab2b19b915216612661ae25c9a",
+   "extents": [
+    [
+     177209344,
+     1258655744,
+     "linear"
+    ]
+   ]
+  },
+  "system_ext_a": {
+   "bytes": 182886400,
+   "sha256": "df541a73be9313a1d0290f4783cadb9e09866287da1944b258048132c0ce9d9e",
+   "extents": [
+    [
+     8004829184,
+     8187715584,
+     "linear"
+    ]
+   ]
+  },
+  "product_a": {
+   "bytes": 1970008064,
+   "sha256": "6e3949328e88d59c3d7432c8b7ec4e4d9c817e38a3d4d2ca076d8b52576e0d0c",
+   "extents": [
+    [
+     6034554880,
+     8004562944,
+     "linear"
+    ]
+   ]
+  },
+  "vendor_a": {
+   "bytes": 385949696,
+   "sha256": "261b2624770f1ded7b500b6d011456eebaddb4f233f7493db07f725f4c1ced91",
+   "extents": [
+    [
+     5647630336,
+     6033580032,
+     "linear"
+    ]
+   ]
+  }
+ }
+}

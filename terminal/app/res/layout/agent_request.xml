@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Body of the approval dialog for a request from another app (AgentRequestActivity). -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:paddingTop="8dp">
+
+        <TextView
+            android:id="@+id/request_body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/on_surface_variant"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/request_command_label"
+            style="@style/RequestLabel"
+            android:text="@string/request_command" />
+
+        <TextView
+            android:id="@+id/request_command"
+            style="@style/RequestValue" />
+
+        <TextView
+            android:id="@+id/request_file_label"
+            style="@style/RequestLabel"
+            android:text="@string/request_file" />
+
+        <TextView
+            android:id="@+id/request_file"
+            style="@style/RequestValue" />
+
+        <TextView
+            android:id="@+id/request_note"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:textColor="@color/on_surface_variant"
+            android:textSize="13sp" />
+
+        <ProgressBar
+            android:id="@+id/request_progress"
+            style="@android:style/Widget.DeviceDefault.ProgressBar.Horizontal"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:indeterminate="true"
+            android:visibility="gone" />
+    </LinearLayout>
+</ScrollView>

@@ -1,0 +1,672 @@
+#!/system/bin/sh
+# Googlebook OS (SM-T870) updater, Android side. Root, SELinux domain gbos_guncelleyici; started
+# by init (bekci) and by the updater service gbos-guncelleyicid on behalf of the "Sistem
+# güncellemesi" app or `gbos-guncelleyici` (root/adb). Not meant to be run by hand.
+#
+#   gbos-guncelleyici-is durum            status lines (key=value) for the app and the CLI
+#   gbos-guncelleyici-is hazirla          tablet-side preparation in the Linux environment (motor)
+#   gbos-guncelleyici-is iptal            stops a running preparation
+#   gbos-guncelleyici-is kur [--ayni]     installs the ready set in /data/gbos-ota/gelen
+#   gbos-guncelleyici-is geri             writes the previous images back (root/adb only)
+#   gbos-guncelleyici-is bekci            boot guard: counts and confirms a new version's boots
+#
+# Layout
+#   /data/gbos-ota/gelen/    a ready image set: system.img system_ext.img product.img, the set's
+#                            own yuvalar.conf, super-baslik.bin and kurulum.zip, hazir.conf last
+#                            (from the tablet's preparation, or pushed by the computer)
+#   /data/gbos-ota/motor/    the preparation kit and its work (motor.py); unpacked from the
+#                            image's /product/etc/gbos-kit when it has none (a wiped /data)
+#   /data/gbos-ota/yeni/     the set being installed (moved from gelen)
+#   /data/gbos-ota/eski/     the running images, read from super before an install
+#   /data/gbos-ota/durum     state for the app (written atomically)
+#   /cache/gbos/             islem.conf, block maps, kur.zip/geri.zip, deneme, sonuc, logs:
+#                            everything recovery reads (/cache is plain ext4, /data is encrypted)
+#
+# Install (kur): check the set, keep the running images as eski (read with the set's slot sizes),
+# make AOSP uncrypt block maps of
+# all six images and read each one back through its map from the raw userdata device, copy the
+# signed recovery package, start a userdata checkpoint (vold; data written by a version that
+# does not survive its trial is discarded), write recovery's command file, reboot into recovery.
+# Recovery's update-binary verifies, writes, reads back and boots (kurtarma/update-binary).
+# The set's own slots, super header and recovery package are used, not the running image's: a set
+# may be made for a newer super header (super-baslik/uret.py); recovery then writes that header
+# first and, on a rollback, the previous one back. The package's signature (recovery) and the
+# header hashes (its signed slot table) decide what is accepted.
+#
+# Kit updates: a set prepared because the kit changed (hazir.conf "neden kit") installs over the
+# same release without --ayni. A release and kit whose set was rolled back (by the guard or by
+# hand) are not prepared again (motor/basarisiz: "surum <build>", "kit <hash>") until another kit
+# or release arrives.
+#
+# Boot guard (bekci, every boot, post-fs-data): after an install the new version gets MAX_TRIALS
+# boots; each must reach sys.boot_completed within BOOT_TIMEOUT and then keep system_server
+# running for HEALTH_WINDOW. Meanwhile the recovery command points at the rollback package, so
+# entering recovery by hand also rolls back. A version that fails is replaced by the previous one
+# (geri, neden=bekci); a version that passes is confirmed: the checkpoint is committed and the
+# rollback command removed. A boot that finds super half-written goes straight back to recovery.
+#
+# Every step checks its result; nothing is reported as done unless it was verified.
+
+umask 077
+OTA=/data/gbos-ota
+GELEN=$OTA/gelen
+YENI=$OTA/yeni
+ESKI=$OTA/eski
+DURUM=$OTA/durum
+CACHE=/cache/gbos
+RCMD=/cache/recovery/command
+ETC=/system/etc/gbos-guncelleyici
+SLOTS_CONF=$ETC/yuvalar.conf
+PACKAGE_SRC=$ETC/kurulum.zip
+SUPER=/dev/block/by-name/super
+BLOCK=4096
+PARTS="system system_ext product"
+MAX_TRIALS=3
+BOOT_TIMEOUT=1500        # s; the first boot after a framework change compiles the boot image
+HEALTH_WINDOW=120        # s system_server must stay up after boot_completed
+CHECKPOINT_TRIES=8       # vold's own counter, above MAX_TRIALS + the rollback boot
+# Battery: the app checks it (40 %, 25 % while charging) before it asks for an install; this
+# domain may not read the battery's sysfs nodes (platform neverallow). Recovery checks again
+# (20 %, 15 % charging) and below that skips the install and boots the unchanged system.
+SPACE_MARGIN_MIB=3072    # free space left on /data after the backup copy (checkpoint headroom)
+LOG=$CACHE/guncelleyici.log
+MOTOR_DIR=$OTA/motor
+KIT_IMAGE=/product/etc/gbos-kit          # kit.tar.gz and KIT (yamalar/kit_imaj.py)
+FAILED=$MOTOR_DIR/basarisiz
+# why the last set was installed and with which kit; kept after the trial (yeni/ is not), so a
+# rollback asked for later still knows the kit it rolls back (/cache: no userdata checkpoint)
+INSTALLED=$CACHE/kurulan.conf
+# set files besides the images, from the tree the set was made from
+SET_FILES="yuvalar.conf super-baslik.bin kurulum.zip"
+
+# --- helpers ---------------------------------------------------------------------------------
+
+kaydet() {  # to /cache/gbos/guncelleyici.log, logcat and stderr
+    local line
+    line="$(date '+%Y-%m-%d %H:%M:%S') [$CMD] $*"
+    echo "$line" >> "$LOG" 2>/dev/null
+    log -t gbos-guncelleyici -p i "$*" 2>/dev/null
+    echo "$line" >&2
+}
+rotate_log() {
+    [ -f "$LOG" ] || return 0
+    [ "$(stat -c %s "$LOG" 2>/dev/null || echo 0)" -gt 1048576 ] && mv -f "$LOG" "$LOG.1"
+    return 0
+}
+# state file for the app: fixed keys, replaced atomically
+state() {  # state DURUM MESAJ [ILERLEME]
+    local tmp="$DURUM.tmp"
+    {
+        echo "durum=$1"
+        echo "mesaj=$2"
+        echo "ilerleme=${3:-}"
+        echo "zaman=$(date +%s)"
+    } > "$tmp" && chmod 0644 "$tmp" && mv -f "$tmp" "$DURUM"
+    kaydet "durum: $1 — $2"
+}
+fail() {  # fail MESSAGE: undo a half-staged install, report, exit 1
+    [ -n "$KUR_STAGED" ] && unstage
+    state hata "$*"
+    exit 1
+}
+unstage() {  # an install that stops before the reboot leaves the ready set where it was
+    local name
+    KUR_STAGED=
+    if [ -n "$UNCRYPTED" ]; then
+        # uncrypt has rewritten the images' blocks in place: the files no longer hold the images,
+        # so the set is dropped and prepared again
+        rm -rf "$YENI" "$ESKI"
+        rm -f "$CACHE"/*.map "$CACHE"/*.map.tmp "$CACHE/islem.conf" "$CACHE/kur.zip" "$CACHE/geri.zip" \
+            "$CACHE"/baslik-*.bin
+        kaydet "kurulum geri alındı; uncrypt imajları değiştirdiği için küme silindi, yeniden hazırlanacak"
+        return 0
+    fi
+    for name in $PARTS; do
+        [ -f "$YENI/$name.img" ] && mv -f "$YENI/$name.img" "$GELEN/$name.img"
+    done
+    for name in $SET_FILES; do
+        [ -f "$YENI/$name" ] && mv -f "$YENI/$name" "$GELEN/$name"
+    done
+    [ -f "$YENI/hazir.conf" ] && mv -f "$YENI/hazir.conf" "$GELEN/hazir.conf"
+    rm -rf "$YENI" "$ESKI"
+    rm -f "$CACHE"/*.map "$CACHE"/*.map.tmp "$CACHE/islem.conf" "$CACHE/kur.zip" "$CACHE/geri.zip" \
+        "$CACHE"/baslik-*.bin
+    kaydet "kurulum geri alındı; hazır güncelleme yerinde"
+}
+is_sha() { case "$1" in *[!0-9a-f]*) return 1 ;; esac; [ ${#1} -eq 64 ]; }
+is_build() { case "$1" in ''|*[!0-9A-Za-z._-]*) return 1 ;; esac; }
+incremental() { echo "${1%%_*}"; }      # 16560795_CL3B.260622.276.R2 -> 16560795
+running_build() { getprop ro.build.version.incremental; }
+build_id() {  # the running build in mica's release naming: <incremental>_<build id>
+    echo "$(getprop ro.build.version.incremental)_$(getprop ro.build.id)"
+}
+conf_get() {  # conf_get FILE KEY: value of "KEY value" or "KEY=value"
+    sed -n "s/^$2[ =]\(.*\)\$/\1/p" "$1" 2>/dev/null | head -n 1
+}
+atomic_write() {  # atomic_write FILE < content
+    cat > "$1.tmp" && sync && mv -f "$1.tmp" "$1" && sync
+}
+sha_of() { sha256sum "$1" | cut -d' ' -f1; }
+slot() {  # slot NAME [CONF] -> "first size" in MiB from yuvalar.conf
+    sed -n "s/^bolum $1 \([0-9]*\) \([0-9]*\)\$/\1 \2/p" "${2:-$SLOTS_CONF}"
+}
+super_header() { dd if="$SUPER" bs=1048576 count=1 2>/dev/null | sha256sum | cut -d' ' -f1; }
+kit_hash() {  # kit_hash KITFILE: the kit's contents hash ("icerik"), empty without one
+    conf_get "$1" icerik
+}
+image_kit() { kit_hash "$KIT_IMAGE/KIT"; }
+data_kit() { kit_hash "$MOTOR_DIR/KIT"; }
+# A kit the running image was not made with and that did not already fail with the running
+# release: preparing it gives a new set for the same release (the app asks for that on its own).
+kit_differs() {
+    local k
+    k=$(data_kit)
+    [ -n "$k" ] && [ "$k" != "$(image_kit)" ] || return 1
+    [ "$k" = "$(conf_get "$FAILED" kit)" ] && [ "$(conf_get "$FAILED" surum)" = "$(build_id)" ] && return 1
+    return 0
+}
+slot_sha() {  # first MiB, MiB
+    dd if="$SUPER" bs=1048576 skip="$1" count="$2" 2>/dev/null | sha256sum | cut -d' ' -f1
+}
+header_ok() {
+    local want now
+    want=$(conf_get "$SLOTS_CONF" super_baslik_sha256)
+    now=$(dd if="$SUPER" bs=1048576 count=1 2>/dev/null | sha256sum | cut -d' ' -f1)
+    [ -n "$want" ] && [ "$now" = "$want" ]
+}
+map_sha() {  # the bytes a block map names, read from the raw device (what recovery will read)
+    local dev n s e
+    read -r dev < "$1"
+    n=0
+    while read -r s e; do
+        n=$((n + 1))
+        [ $n -le 3 ] && continue
+        dd if="$dev" bs=$BLOCK skip="$s" count=$((e - s)) 2>/dev/null || return 1
+    done < "$1" | sha256sum | cut -d' ' -f1
+}
+free_mib() {  # free MiB on the filesystem of $1 (statfs: available blocks, block size)
+    set -- $(stat -f -c '%a %S' "$1" 2>/dev/null)
+    case "$1$2" in ''|*[!0-9]*) return 1 ;; esac
+    echo $(($1 / (1048576 / $2)))
+}
+reboot_recovery() {  # writes recovery's command file and reboots into recovery
+    local pkg="$1" locale
+    locale=$(getprop persist.sys.locale)
+    { echo "--update_package=$CACHE/$pkg"; [ -n "$locale" ] && echo "--locale=$locale"; } |
+        atomic_write "$RCMD" || fail "kurtarma komutu yazılamadı"
+    grep -qx -- "--update_package=$CACHE/$pkg" "$RCMD" || fail "kurtarma komutu doğrulanamadı"
+    kaydet "kurtarmaya yeniden başlatılıyor: $pkg"
+    sync
+    # "recovery": the Samsung kernel writes PON_RESTART_REASON_RECOVERY for it. init's shutdown
+    # (services, then the filesystems) takes a while; the script is normally killed during it.
+    setprop sys.powerctl reboot,recovery
+    sleep 300
+    kaydet "yeniden başlatma 300 s içinde gerçekleşmedi"
+    state hata "Yeniden başlatılamadı; tablet elle yeniden başlatılınca kurulum sürer"
+    exit 1
+}
+
+# vdc answers the checkpoint questions with its exit status: 1 yes, 0 no, anything else an
+# error (system/vold/vdc.cpp; checkStatus exits with ENOTTY)
+vdc_ask() {
+    vdc checkpoint "$1" >/dev/null 2>&1
+    case $? in 1) return 0 ;; 0) return 1 ;; *) return 2 ;; esac
+}
+checkpoint_supported() { vdc_ask supportsCheckpoint; }
+# vold refuses every commitChanges while persist.vold.dont_commit_checkpoint is 1
+# (system/vold/Checkpoint.cpp cp_commitChanges). The trial needs that: on the tablet something
+# else (Play services' update flow, written for A/B devices) commits the checkpoint ~2 s after
+# boot_completed, so the data written by a failing version could not be rolled back (24 Oct 2026).
+# kur holds the commit; only the guard releases it, for a version that proved healthy.
+hold_commit() { setprop persist.vold.dont_commit_checkpoint 1; }
+release_commit() { setprop persist.vold.dont_commit_checkpoint 0; }
+
+# Commits a pending userdata checkpoint after a healthy boot. Without it every later reboot would
+# drop what was written since (f2fs checkpoint=disable).
+commit_checkpoint() {
+    vdc_ask needsCheckpoint
+    case $? in  # vdc_ask: 0 yes, 1 no, 2 error
+        0)
+            release_commit
+            vdc checkpoint commitChanges >/dev/null 2>&1 || { kaydet "checkpoint onaylanamadı (commitChanges)"; return 1; }
+            [ "$(getprop vold.checkpoint_committed)" = 1 ] ||
+                { kaydet "checkpoint onaylanamadı (vold.checkpoint_committed boş)"; return 1; }
+            kaydet "veri checkpoint'i onaylandı" ;;
+        1) [ -f "$CACHE/checkpoint" ] && kaydet "bekleyen checkpoint yok"
+           [ "$(getprop persist.vold.dont_commit_checkpoint)" = 1 ] && release_commit ;;
+        *) kaydet "vdc checkpoint durumunu bildirmedi"; return 1 ;;
+    esac
+    rm -f "$CACHE/checkpoint"
+    sync
+}
+
+# --- durum -----------------------------------------------------------------------------------
+
+cmd_durum() {
+    [ -f "$DURUM" ] && cat "$DURUM" || echo "durum=bos"
+    echo "calisan=$(running_build)"
+    kit_differs && echo "kit_farkli=1"
+    [ -f "$GELEN/hazir.conf" ] && echo "hazir=$(conf_get "$GELEN/hazir.conf" surum)"
+    [ -f "$ESKI/surum" ] && [ -f "$CACHE/eski-system.map" ] && echo "onceki=$(cat "$ESKI/surum")"
+    [ -f "$CACHE/sonuc" ] && echo "son_kurulum=$(cat "$CACHE/sonuc")"
+    [ -f "$CACHE/deneme" ] && echo "deneme=$(conf_get "$CACHE/deneme" sayac)"
+    [ -f "$MOTOR_DIR/durum.json" ] && echo "motor=$(tr -d '\n' < "$MOTOR_DIR/durum.json")"
+    return 0
+}
+
+# --- hazirla / iptal (the motor in the Linux environment) --------------------------------------
+
+# The kit the image carries, unpacked into $MOTOR_DIR when /data has none (a wiped tablet). The
+# kit's app signing key never is in an image: motor.py makes a key of the tablet's own then.
+unpack_kit() {
+    local t="$MOTOR_DIR.acilan"
+    [ -f "$MOTOR_DIR/KIT" ] && [ -f "$MOTOR_DIR/kit/guncelleyici/motor/motor.py" ] && return 0
+    [ -f "$KIT_IMAGE/kit.tar.gz" ] && [ -f "$KIT_IMAGE/KIT" ] || return 1
+    kaydet "imajdaki kit açılıyor ($(image_kit))"
+    rm -rf "$t" && mkdir -p "$t" "$MOTOR_DIR" || return 1
+    zcat "$KIT_IMAGE/kit.tar.gz" | tar -x -C "$t" 2>>"$LOG" || { rm -rf "$t"; return 1; }
+    [ "$(kit_hash "$t/KIT")" = "$(image_kit)" ] || { kaydet "açılan kit imajdakiyle uyuşmuyor"; rm -rf "$t"; return 1; }
+    rm -rf "$MOTOR_DIR/kit" "$MOTOR_DIR/tasinan"
+    mkdir -p "$MOTOR_DIR/ev"
+    mv "$t/kit" "$t/tasinan" "$MOTOR_DIR/" && cp -a "$t/ev/." "$MOTOR_DIR/ev/" || { rm -rf "$t"; return 1; }
+    ln -sfn ../mica-imaj "$MOTOR_DIR/kit/mica-imaj"
+    mv -f "$t/KIT" "$MOTOR_DIR/KIT" || return 1
+    rm -rf "$t"
+    chmod 700 "$MOTOR_DIR"
+    kaydet "kit açıldı: $(data_kit)"
+}
+
+cmd_hazirla() {
+    local kit="$MOTOR_DIR/kit/guncelleyici/motor/motor.py"
+    [ -x /system/bin/gbos-linux ] || fail "Linux ortamı bu imajda yok"
+    gbos-linux status 2>/dev/null | grep -qx 'installed=true' ||
+        fail "Tablette hazırlama için Linux ortamı kurulu değil"
+    mkdir -p "$GELEN" "$MOTOR_DIR"
+    unpack_kit || fail "Hazırlama araçları (kit) açılamadı"
+    [ -f "$kit" ] || fail "Tablette hazırlama araçları (kit) yok"
+    state hazirlaniyor "Güncelleme hazırlanıyor"
+    # One bind of /data/gbos-ota: the motor renames the finished images into gelen/ (same mount).
+    # GBOS_KUR_BICIM=2: this kur installs sets made for a newer super header (otherwise the motor
+    # makes a bridge image for the header in super). GBOS_IMAJ_KIT: the kit the running image
+    # was made with (a different kit prepares the same release again).
+    gbos-linux run --bind "$OTA:/ota" \
+        --env "GBOS_MEVCUT_ARTIMLI=$(running_build)" \
+        --env GBOS_GUNCELLEYICI=/ota/motor --env GBOS_CIKTI=/ota/gelen \
+        --env GBOS_KUR_BICIM=2 --env "GBOS_SUPER_BASLIK_SHA=$(super_header)" \
+        --env "GBOS_IMAJ_KIT=$(image_kit)" \
+        --env "GBOS_BASARISIZ_SURUM=$(conf_get "$FAILED" surum)" --env "GBOS_BASARISIZ_KIT=$(conf_get "$FAILED" kit)" \
+        -- python3 -I /ota/motor/kit/guncelleyici/motor/motor.py hazirla >> "$LOG" 2>&1 &
+    local child=$! rc
+    echo "$child" > "$OTA/hazirla.pid"
+    wait "$child"
+    rc=$?
+    rm -f "$OTA/hazirla.pid"
+    if [ $rc -eq 0 ] && [ -f "$GELEN/hazir.conf" ]; then
+        state hazir "Güncelleme kurulmaya hazır: $(conf_get "$GELEN/hazir.conf" surum)"
+    elif [ $rc -eq 0 ]; then
+        state guncel "Sistem güncel"
+    elif [ $rc -eq 143 ] || [ $rc -eq 130 ]; then
+        state duraklatildi "Hazırlık durduruldu; yeniden başlatılınca kaldığı yerden sürer"
+    else
+        fail "Hazırlık başarısız (çıkış $rc); ayrıntı motor durumunda"
+    fi
+}
+
+cmd_iptal() {
+    local pid
+    pid=$(cat "$OTA/hazirla.pid" 2>/dev/null)
+    case "$pid" in ''|*[!0-9]*) echo "çalışan hazırlık yok"; return 0 ;; esac
+    kill -TERM "$pid" 2>/dev/null && kaydet "hazırlık durdurma isteği ($pid)"
+}
+
+# --- kur -------------------------------------------------------------------------------------
+
+check_set() {  # check_set DIR: the set's files and images match hazir.conf and their slots
+    local dir="$1" name sl size want got
+    [ -f "$dir/hazir.conf" ] || { kaydet "$dir/hazir.conf yok"; return 1; }
+    SET_BUILD=$(conf_get "$dir/hazir.conf" surum)
+    is_build "$SET_BUILD" || { kaydet "hazir.conf: sürüm '$SET_BUILD'"; return 1; }
+    SET_REASON=$(conf_get "$dir/hazir.conf" neden)
+    SET_KIT=$(conf_get "$dir/hazir.conf" kit)
+    # the set's own layout and package; a set without them (made before 25 Oct 2026) uses the
+    # running image's
+    SET_SLOTS=$SLOTS_CONF SET_HEADER_FILE= SET_PACKAGE=$PACKAGE_SRC
+    if grep -q '^dosya ' "$dir/hazir.conf"; then
+        for name in $SET_FILES; do
+            want=$(sed -n "s/^dosya $name \([0-9a-f]*\)\$/\1/p" "$dir/hazir.conf")
+            is_sha "$want" && [ -f "$dir/$name" ] && [ "$(sha_of "$dir/$name")" = "$want" ] ||
+                { kaydet "$name kümede yok ya da bozuk"; return 1; }
+        done
+        SET_SLOTS=$dir/yuvalar.conf SET_HEADER_FILE=$dir/super-baslik.bin SET_PACKAGE=$dir/kurulum.zip
+        [ "$(sha_of "$SET_HEADER_FILE")" = "$(conf_get "$SET_SLOTS" super_baslik_sha256)" ] ||
+            { kaydet "super-baslik.bin yuvalar.conf'taki başlık değil"; return 1; }
+    fi
+    for name in $PARTS; do
+        sl=$(slot "$name" "$SET_SLOTS"); size=${sl#* }
+        [ -n "$sl" ] || { kaydet "yuvalar.conf'ta $name yok"; return 1; }
+        [ -f "$dir/$name.img" ] || { kaydet "$dir/$name.img yok"; return 1; }
+        [ "$(stat -c %s "$dir/$name.img")" = "$(expr "$size" \* 1048576)" ] ||
+            { kaydet "$name.img yuvaya ($size MiB) uymuyor"; return 1; }
+        want=$(sed -n "s/^bolum $name \([0-9a-f]*\)\$/\1/p" "$dir/hazir.conf")
+        is_sha "$want" || { kaydet "hazir.conf: $name özeti yok"; return 1; }
+        got=$(sha_of "$dir/$name.img")
+        [ "$got" = "$want" ] || { kaydet "$name.img: $got, beklenen $want"; return 1; }
+        eval "YENI_SHA_$name=$want"
+    done
+    return 0
+}
+
+cmd_kur() {
+    local same=0 name sl first size need free sha eski_sha set map want got old_build now target
+    [ "${1:-}" = --ayni ] && same=1
+    [ -f "$CACHE/deneme" ] && fail "Önceki kurulumun denemesi sürüyor"
+    [ -f "$CACHE/yaziliyor" ] && fail "Yarım kalmış bir yazma var; tablet yeniden başlatılmalı"
+    state kuruluyor "Güncelleme denetleniyor" 5
+    check_set "$GELEN" || fail "Hazır güncelleme bozuk ya da eksik"
+    # super holds the set's header or an older one the set's slots contain
+    now=$(super_header)
+    target=$(conf_get "$SET_SLOTS" super_baslik_sha256)
+    [ "$now" = "$target" ] || grep -qx "onceki_baslik $now" "$SET_SLOTS" ||
+        fail "Super bölümünün başlığı beklenen değil; kurulum yapılmaz"
+    [ "$now" = "$target" ] || [ -n "$SET_HEADER_FILE" ] || fail "kümede super başlığı yok"
+    old_build=$(build_id)
+    is_build "$old_build" || fail "Çalışan sürümün adı okunamadı"
+    # the same release again: asked for (--ayni), or a set made for a kit the image lacks
+    if [ $same = 0 ] && [ "$SET_REASON" = kit ] && [ -n "$SET_KIT" ] && [ "$SET_KIT" != "$(image_kit)" ]; then
+        same=1
+    fi
+    if [ $same = 0 ] && [ "$(incremental "$SET_BUILD")" -le "$(running_build)" ]; then
+        fail "Hazır sürüm ($SET_BUILD) çalışandan yeni değil"
+    fi
+    need=0
+    for name in $PARTS; do sl=$(slot "$name" "$SET_SLOTS"); need=$((need + ${sl#* })); done
+    free=$(free_mib /data)
+    [ -n "$free" ] && [ "$free" -ge $((need + SPACE_MARGIN_MIB)) ] ||
+        fail "Yer yetersiz: /data'da $((need + SPACE_MARGIN_MIB)) MiB boş alan gerekir (${free:-?} var)"
+
+    # the set to install
+    rm -rf "$YENI" "$ESKI" && mkdir -p "$YENI" "$ESKI" || fail "çalışma dizinleri hazırlanamadı"
+    KUR_STAGED=1
+    for name in $PARTS; do
+        mv -f "$GELEN/$name.img" "$YENI/$name.img" || fail "$name.img taşınamadı"
+    done
+    for name in $SET_FILES; do
+        [ -f "$GELEN/$name" ] && { mv -f "$GELEN/$name" "$YENI/$name" || fail "$name taşınamadı"; }
+    done
+    mv -f "$GELEN/hazir.conf" "$YENI/hazir.conf"
+    case "$SET_SLOTS" in "$GELEN"/*) SET_SLOTS=$YENI/${SET_SLOTS##*/} ;; esac
+    case "$SET_PACKAGE" in "$GELEN"/*) SET_PACKAGE=$YENI/${SET_PACKAGE##*/} ;; esac
+    case "$SET_HEADER_FILE" in "$GELEN"/*) SET_HEADER_FILE=$YENI/${SET_HEADER_FILE##*/} ;; esac
+    echo "$SET_BUILD" > "$YENI/surum"
+    # uncrypt maps every block of an image; a hole has none and recovery would read other bytes
+    # (awk: mksh arithmetic is 32-bit and a 3 GiB product image overflows it)
+    for name in $PARTS; do
+        stat -c '%b %B %s' "$YENI/$name.img" | awk '{ exit !($1 * $2 >= $3) }' ||
+            fail "$name.img seyrek (diskte ayrılmamış blokları var); hazırlayan taraf yoğun yazmalı"
+    done
+
+    # the running images: the way back
+    state kuruluyor "Mevcut sürüm yedekleniyor" 20
+    for name in $PARTS; do
+        sl=$(slot "$name" "$SET_SLOTS"); first=${sl% *}; size=${sl#* }
+        dd if="$SUPER" of="$ESKI/$name.img" bs=1048576 skip="$first" count="$size" conv=fsync \
+            2>>"$LOG" || fail "$name yedeklenemedi"
+        sha=$(sha_of "$ESKI/$name.img")
+        [ "$sha" = "$(slot_sha "$first" "$size")" ] || fail "$name yedeği yuvayla eşleşmiyor"
+        eval "ESKI_SHA_$name=$sha"
+    done
+    echo "$old_build" > "$ESKI/surum"
+    sync
+
+    # block maps, each read back from the raw device the way recovery reads it
+    state kuruluyor "Kurulum için hazırlanıyor" 50
+    rm -f "$CACHE"/*.map "$CACHE"/*.map.tmp
+    # from here on uncrypt rewrites the images' blocks in place: the set cannot go back to gelen
+    UNCRYPTED=1
+    for set in yeni eski; do
+        for name in $PARTS; do
+            map="$CACHE/$set-$name.map"
+            uncrypt "$OTA/$set/$name.img" "$map" >> "$LOG" 2>&1 || fail "$set $name için blok haritası çıkarılamadı"
+            eval "want=\$$(echo "$set" | tr a-z A-Z)_SHA_$name"
+            got=$(map_sha "$map")
+            [ "$got" = "$want" ] || fail "$set $name blok haritasından doğru okunmuyor ($got)"
+        done
+    done
+
+    # the signed package (the set's: it knows the set's header) and the operation
+    for p in kur.zip geri.zip; do
+        cp -f "$SET_PACKAGE" "$CACHE/$p.tmp" && mv -f "$CACHE/$p.tmp" "$CACHE/$p" &&
+            [ "$(sha_of "$CACHE/$p")" = "$(sha_of "$SET_PACKAGE")" ] || fail "kurulum paketi kopyalanamadı"
+    done
+    rm -f "$CACHE"/baslik-*.bin
+    if [ "$now" != "$target" ]; then
+        cp -f "$SET_HEADER_FILE" "$CACHE/baslik-hedef.bin" &&
+            [ "$(sha_of "$CACHE/baslik-hedef.bin")" = "$target" ] || fail "yeni super başlığı kopyalanamadı"
+        dd if="$SUPER" of="$CACHE/baslik-onceki.bin" bs=1048576 count=1 2>>"$LOG" &&
+            [ "$(sha_of "$CACHE/baslik-onceki.bin")" = "$now" ] || fail "mevcut super başlığı yedeklenemedi"
+        kaydet "super başlığı değişecek: $now -> $target"
+    fi
+    {
+        echo "bicim 1"
+        echo "surum_yeni $SET_BUILD"
+        echo "surum_eski $old_build"
+        echo "neden kullanici"
+        echo "super_baslik_sha256 $now"
+        echo "super_baslik_hedef $target"
+        for name in $PARTS; do
+            sl=$(slot "$name" "$SET_SLOTS"); first=${sl% *}; size=${sl#* }
+            eval "echo \"bolum $name $first $size $(expr "$size" \* 1048576) \$YENI_SHA_$name \$ESKI_SHA_$name\""
+        done
+    } | atomic_write "$CACHE/islem.conf" || fail "işlem dosyası yazılamadı"
+    printf 'surum %s\nneden %s\nkit %s\n' "$SET_BUILD" "${SET_REASON:-surum}" "$SET_KIT" | atomic_write "$INSTALLED" ||
+        fail "kurulum kaydı yazılamadı"
+    # the result of this install gets its own notice; a marker left by an earlier one would
+    # silence it (24 Oct 2026: after a rollback the state stayed "kuruluyor")
+    rm -f "$CACHE/sonuc" "$CACHE/sonuc.bildirildi"
+
+    if checkpoint_supported; then
+        hold_commit
+        [ "$(getprop persist.vold.dont_commit_checkpoint)" = 1 ] ||
+            fail "checkpoint onayı tutulamadı (persist.vold.dont_commit_checkpoint)"
+        vdc checkpoint startCheckpoint $CHECKPOINT_TRIES >> "$LOG" 2>&1 ||
+            { release_commit; fail "veri checkpoint'i başlatılamadı"; }
+        touch "$CACHE/checkpoint"
+        kaydet "veri checkpoint'i başlatıldı ($CHECKPOINT_TRIES deneme)"
+    else
+        kaydet "bu cihazda veri checkpoint'i yok: başarısız sürümde yazılan veri geri alınamaz"
+    fi
+    state kuruluyor "Yeniden başlatılıyor; güncelleme kurtarma modunda yazılacak" 90
+    KUR_STAGED=
+    reboot_recovery kur.zip
+}
+
+# --- geri ------------------------------------------------------------------------------------
+
+request_rollback() {  # request_rollback REASON: rewrites islem.conf's neden, reboots into recovery
+    local reason="$1"
+    [ -f "$CACHE/islem.conf" ] || fail "geri dönüş bilgisi yok"
+    for name in $PARTS; do
+        [ -f "$CACHE/eski-$name.map" ] && [ -f "$ESKI/$name.img" ] || fail "önceki $name imajı yok"
+    done
+    [ -f "$CACHE/geri.zip" ] || fail "geri dönüş paketi yok"
+    sed "s/^neden .*/neden $reason/" "$CACHE/islem.conf" | atomic_write "$CACHE/islem.conf" ||
+        fail "işlem dosyası güncellenemedi"
+    state geri-donuluyor "Önceki sürüme dönülüyor"
+    reboot_recovery geri.zip
+}
+
+cmd_geri() {
+    [ -f "$CACHE/yaziliyor" ] && fail "Yarım kalmış bir yazma var"
+    header_ok || fail "Super bölümünün başlığı beklenen değil"
+    request_rollback kullanici
+}
+
+# --- bekci -----------------------------------------------------------------------------------
+
+arm_rollback() {  # recovery entered by hand during the trial rolls back
+    sed "s/^neden .*/neden bekci/" "$CACHE/islem.conf" | atomic_write "$CACHE/islem.conf" &&
+        printf '%s\n' "--update_package=$CACHE/geri.zip" | atomic_write "$RCMD"
+}
+
+wait_boot() {  # wait_boot SECONDS: 0 once sys.boot_completed=1
+    local waited=0
+    while [ $waited -lt "$1" ]; do
+        [ "$(getprop sys.boot_completed)" = 1 ] && return 0
+        sleep 5
+        waited=$((waited + 5))
+    done
+    return 1
+}
+
+healthy() {  # system_server stays up (its start count does not change) for HEALTH_WINDOW s
+    local count waited=0
+    count=$(getprop sys.system_server.start_count)
+    case "$count" in ''|*[!0-9]*) kaydet "sys.system_server.start_count okunamadı"; return 1 ;; esac
+    while [ $waited -lt $HEALTH_WINDOW ]; do
+        sleep 10
+        waited=$((waited + 10))
+        [ "$(getprop sys.boot_completed)" = 1 ] || { kaydet "boot_completed düştü"; return 1; }
+        [ "$(getprop sys.system_server.start_count)" = "$count" ] ||
+            { kaydet "system_server yeniden başladı"; return 1; }
+    done
+    return 0
+}
+
+# A release and kit whose set was rolled back are not prepared again (kit_differs, motor.py);
+# another kit or release is.
+remember_failed() {
+    local b
+    b=$(conf_get "$INSTALLED" surum)
+    is_build "$b" || return 0
+    printf 'surum %s\nkit %s\n' "$b" "$(conf_get "$INSTALLED" kit)" | atomic_write "$FAILED" &&
+        kaydet "geri alınan küme bir daha hazırlanmayacak: $b, kit $(conf_get "$INSTALLED" kit)"
+}
+
+cmd_bekci() {
+    local pkg tries want running count
+    mkdir -p "$CACHE"
+    rotate_log
+    # super half-written (power lost while recovery wrote): back to recovery to finish
+    if [ -f "$CACHE/yaziliyor" ]; then
+        pkg=$(cut -d' ' -f2 "$CACHE/yaziliyor")
+        case "$pkg" in kur.zip|geri.zip) ;; *) pkg=geri.zip ;; esac
+        tries=$(cat "$CACHE/yaziliyor.acilis" 2>/dev/null || echo 0)
+        tries=$((tries + 1))
+        echo $tries | atomic_write "$CACHE/yaziliyor.acilis"
+        if [ $tries -le 3 ]; then
+            kaydet "super yarım yazılmış ($pkg); kurtarmada tamamlanacak (deneme $tries)"
+            reboot_recovery "$pkg"
+        fi
+        kaydet "super yarım yazılmış ve kurtarma 3 kez tamamlayamadı; bilgisayardan kurtarılmalı"
+        state hata "Sistem bölümleri yarım yazılmış; bilgisayardan kurtarma gerekiyor"
+        return 1
+    fi
+    rm -f "$CACHE/yaziliyor.acilis"
+
+    if [ -f "$CACHE/deneme" ]; then
+        want=$(conf_get "$CACHE/deneme" surum_yeni)
+        running=$(running_build)
+        count=$(conf_get "$CACHE/deneme" sayac)
+        case "$count" in ''|*[!0-9]*) count=$MAX_TRIALS ;; esac
+        count=$((count + 1))
+        sed "s/^sayac=.*/sayac=$count/" "$CACHE/deneme" | atomic_write "$CACHE/deneme"
+        kaydet "deneme açılışı $count/$MAX_TRIALS: $want (çalışan $running)"
+        # the hold is kur's, but a version installed by an older kur (or a cleared persist
+        # store) starts its trial without it; post-fs-data is before anything can commit
+        if [ -f "$CACHE/checkpoint" ] && [ "$(getprop persist.vold.dont_commit_checkpoint)" != 1 ]; then
+            kaydet "checkpoint onayı tutulmuyordu; deneme boyunca tutuluyor"
+            hold_commit
+        fi
+        if [ "$(incremental "$want")" != "$running" ]; then
+            kaydet "çalışan sürüm beklenen değil"
+            request_rollback bekci
+        fi
+        [ $count -le $MAX_TRIALS ] || { kaydet "deneme hakkı bitti"; request_rollback bekci; }
+        arm_rollback || kaydet "geri dönüş komutu hazırlanamadı"
+        state deneme "Yeni sürüm deneniyor ($count/$MAX_TRIALS)"
+        wait_boot $BOOT_TIMEOUT || { kaydet "açılış $BOOT_TIMEOUT s içinde tamamlanmadı"; request_rollback bekci; }
+        healthy || request_rollback bekci
+        # vold sets vold.checkpoint_committed on every real commit; set before ours means
+        # someone committed during the trial and a rollback could not have restored the data
+        [ -f "$CACHE/checkpoint" ] && [ "$(getprop vold.checkpoint_committed)" = 1 ] &&
+            kaydet "UYARI: veri checkpoint'i deneme bitmeden onaylanmış; bu denemede geri dönüş veriyi geri alamazdı"
+        commit_checkpoint || request_rollback bekci
+        rm -f "$RCMD" "$CACHE/deneme" "$CACHE"/yeni-*.map "$CACHE/kur.zip"
+        rm -rf "$YENI"
+        sync
+        state guncellendi "Googlebook OS $want kuruldu"
+        return 0
+    fi
+
+    # no trial (an install that did not happen, a rollback, an ordinary boot): a pending
+    # checkpoint is committed once the running version proved healthy
+    if wait_boot $BOOT_TIMEOUT && healthy; then
+        commit_checkpoint || kaydet "checkpoint onaylanamadı; bir sonraki açılışta yeniden denenecek"
+    fi
+    if [ -f "$CACHE/sonuc" ] && [ ! -f "$CACHE/sonuc.bildirildi" ]; then
+        case "$(cat "$CACHE/sonuc")" in
+            geri-donuldu*)
+                # the failed set is not tried again; /data rolled back to before kur, so the
+                # state file says "kuruluyor" until this line
+                remember_failed
+                rm -f "$CACHE/kur.zip" "$CACHE"/yeni-*.map
+                rm -rf "$YENI"
+                state geri-donuldu "Önceki sürüme dönüldü: $(cut -d' ' -f2 "$CACHE/sonuc")" ;;
+            kurulamadi*)
+                # the images in yeni/ went through uncrypt: not a set any more
+                remember_failed
+                rm -f "$CACHE/kur.zip" "$CACHE"/yeni-*.map
+                rm -rf "$YENI"
+                state hata "Güncelleme yazılamadı; önceki sürüm geri yüklendi" ;;
+            yapilmadi*)
+                rm -f "$CACHE/kur.zip" "$CACHE"/yeni-*.map
+                rm -rf "$YENI"
+                state hata "Güncelleme kurulmadı: $(cut -d' ' -f3- "$CACHE/sonuc")" ;;
+        esac
+        touch "$CACHE/sonuc.bildirildi"
+    fi
+    return 0
+}
+
+# --- the operation lock ----------------------------------------------------------------------
+# A directory made atomically, holding the owner's pid and boot id. mksh opens redirected
+# descriptors close-on-exec, so toybox flock cannot hold one for the script; a lock whose owner
+# is gone (or from an earlier boot: kur ends in a reboot) is stale and taken over.
+LOCK_DIR=$OTA/kilit.d
+boot_id() { cat /proc/sys/kernel/random/boot_id 2>/dev/null; }
+take_lock() {
+    local owner
+    rm -f "$OTA/kilit"   # the earlier flock file
+    if mkdir "$LOCK_DIR" 2>/dev/null; then
+        echo "$$ $(boot_id)" > "$LOCK_DIR/sahip"
+        return 0
+    fi
+    owner=$(cat "$LOCK_DIR/sahip" 2>/dev/null)
+    if [ "${owner#* }" = "$(boot_id)" ] && kill -0 "${owner%% *}" 2>/dev/null; then
+        return 1
+    fi
+    kaydet "eski kilit bırakıldı ($owner)"
+    rm -rf "$LOCK_DIR"
+    mkdir "$LOCK_DIR" 2>/dev/null || return 1
+    echo "$$ $(boot_id)" > "$LOCK_DIR/sahip"
+}
+release_lock() {
+    [ "$(cat "$LOCK_DIR/sahip" 2>/dev/null)" = "$$ $(boot_id)" ] && rm -rf "$LOCK_DIR"
+}
+
+# --- main ------------------------------------------------------------------------------------
+
+CMD="${1:-}"
+[ $# -gt 0 ] && shift
+mkdir -p "$OTA" "$CACHE" 2>/dev/null
+case "$CMD" in
+    durum) cmd_durum ;;
+    bekci) cmd_bekci ;;
+    iptal) cmd_iptal ;;
+    hazirla|kur|geri)
+        # one operation at a time; durum, iptal and bekci never wait for the lock
+        take_lock || { echo "başka bir işlem sürüyor" >&2; exit 75; }
+        trap release_lock EXIT
+        "cmd_$CMD" "$@" ;;
+    *) sed -n '5,11p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
+esac

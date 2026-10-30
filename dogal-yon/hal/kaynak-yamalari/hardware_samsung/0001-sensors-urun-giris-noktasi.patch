@@ -1,0 +1,16 @@
+Sensors multi-HAL as a library: main() becomes gbos_hal_main(), the entry point the /product
+launcher (dogal-yon/hal/src/baslatici.c) calls after loading it next to the vendor libraries.
+
+--- a/aidl/sensors/service.cpp
++++ b/aidl/sensors/service.cpp
+@@ -22,7 +22,9 @@
+ 
+ using ::aidl::android::hardware::sensors::implementation::HalProxySamsung;
+ 
+-int main() {
++// Googlebook OS (T870-araclar/dogal-yon/hal): built as a library that the /product launcher
++// loads into a namespace cloned from "sphal"; this is its entry point.
++extern "C" int gbos_hal_main() {
+     ABinderProcess_setThreadPoolMaxThreadCount(0);
+ 
+     // Make a default multihal sensors service

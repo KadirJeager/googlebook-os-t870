@@ -1,0 +1,143 @@
+# Access vectors the Googlebook OS policy must decide this way (yamalar/selinux.py dogrula).
+# "[-]scontext tcontext class permission"; a leading "-" means it must be denied.
+# A "kip=enforcing" / "kip=permissive" tag in the comment limits the line to that mode.
+
+# Googlebook desktop services registered by system_server (labels from mica's vendor)
+u:r:system_server:s0 u:object_r:desktop_net_service:s0 service_manager add
+u:r:system_server:s0 u:object_r:desktop_data_migration_service:s0 service_manager add
+u:r:system_server:s0 u:object_r:desktop_diagnostics_service:s0 service_manager add
+u:r:system_server:s0 u:object_r:desktop_serviceability_service:s0 service_manager add
+u:r:system_server:s0 u:object_r:desktop_setting_health_service:s0 service_manager add
+u:r:system_server:s0 u:object_r:desktop_snapshot_service:s0 service_manager add
+u:r:system_server:s0 u:object_r:desktop_video_chat_manager:s0 service_manager add
+u:r:system_server:s0 u:object_r:drm_network_service:s0 service_manager add
+u:r:system_server:s0 u:object_r:aqueduct_service:s0 service_manager add
+# ... and their clients
+u:r:priv_app:s0:c512,c768 u:object_r:desktop_serviceability_service:s0 service_manager find
+u:r:untrusted_app:s0:c512,c768 u:object_r:desktop_serviceability_service:s0 service_manager find
+u:r:priv_app:s0:c512,c768 u:object_r:desktop_setting_health_service:s0 service_manager find
+u:r:platform_app:s0:c512,c768 u:object_r:desktop_video_chat_manager:s0 service_manager find
+# Lookups of mica vendor services that do not exist here must reach servicemanager ("not
+# found" instead of EX_SECURITY from isDeclared/waitForService)
+u:r:system_server:s0 u:object_r:hal_desktop_charge_control_service:s0 service_manager find
+u:r:system_server:s0 u:object_r:desktop_health_service:s0 service_manager find
+u:r:system_server:s0 u:object_r:vpd_executor_service:s0 service_manager find
+u:r:system_app:s0 u:object_r:vpd_executor_service:s0 service_manager find
+u:r:system_app:s0 u:object_r:ec_executor_service:s0 service_manager find
+# vendor.google.desktop.serviceability (system_app) reading procfs/sysfs for Diagnostics
+u:r:system_app:s0 u:object_r:proc_stat:s0 file read
+u:r:system_app:s0 u:object_r:proc_vmstat:s0 file read
+u:r:system_app:s0 u:object_r:proc_asound:s0 file read
+u:r:system_app:s0 u:object_r:sysfs:s0 dir read
+u:r:system_app:s0 u:object_r:sysfs:s0 file read
+u:r:system_app:s0 u:object_r:sysfs_batteryinfo:s0 dir read
+u:r:system_app:s0 u:object_r:sysfs_batteryinfo:s0 file read
+u:r:platform_app:s0:c512,c768 u:object_r:hal_googlebattery_service:s0 service_manager find
+u:r:udsattestation:s0 u:object_r:gscd_service:s0 service_manager find
+u:r:snapshotservice:s0 u:object_r:snapshot_collector_service:s0 service_manager find
+# Nobody may claim names that fall to the catch-all label
+-u:r:udsattestation:s0 u:object_r:default_android_service:s0 service_manager find
+-u:r:system_server:s0 u:object_r:default_android_service:s0 service_manager add
+
+# Sense face unlock: HAL started by init as system_server, found by the Sense app
+u:r:init:s0 u:r:system_server:s0 process transition
+u:r:system_server:s0 u:object_r:zygote_exec:s0 file entrypoint
+u:r:system_server:s0 u:object_r:hal_face_service:s0 service_manager add
+u:r:priv_app:s0:c512,c768 u:object_r:hal_face_service:s0 service_manager find
+u:r:system_server:s0 u:r:priv_app:s0:c512,c768 binder call
+u:r:priv_app:s0:c512,c768 u:r:system_server:s0 binder call
+u:r:priv_app:s0:c512,c768 u:object_r:system_lib_file:s0 file execute
+u:r:priv_app:s0:c512,c768 u:object_r:cameraserver_service:s0 service_manager find
+# ... and the same for Sense's actual domain (target SDK 35 -> priv_app_36)
+u:r:priv_app_36:s0:c512,c768 u:object_r:hal_face_service:s0 service_manager find
+u:r:priv_app_36:s0:c522,c768 u:object_r:hal_face_service:s0 service_manager find
+-u:r:untrusted_app:s0:c512,c768 u:object_r:hal_face_service:s0 service_manager find
+u:r:system_server:s0 u:r:priv_app_36:s0:c512,c768 binder call
+u:r:priv_app_36:s0:c512,c768 u:r:system_server:s0 binder call
+u:r:priv_app_36:s0:c512,c768 u:object_r:system_lib_file:s0 file execute
+u:r:priv_app_36:s0:c512,c768 u:object_r:cameraserver_service:s0 service_manager find
+
+# 32-bit vendor HALs on the system 32-bit runtime (/system/lib, gbos-vendor-override, linker)
+u:r:hal_audio_default:s0 u:object_r:system_lib_file:s0 file execute
+u:r:hal_audio_default:s0 u:object_r:system_lib_file:s0 file map
+u:r:hal_audio_default:s0 u:object_r:system_linker_exec:s0 file execute
+u:r:hal_audio_default:s0 u:object_r:system_linker_config_file:s0 file read
+u:r:mediacodec:s0 u:object_r:system_linker_config_file:s0 file read
+u:r:vendor_hal_drm_widevine:s0 u:object_r:system_linker_config_file:s0 file read
+u:r:hal_cas_default:s0 u:object_r:system_linker_config_file:s0 file read
+# ... but not the rest of /system (vendor code stays off system_file)
+-u:r:hal_audio_default:s0 u:object_r:system_file:s0 file read
+u:r:mediacodec:s0 u:object_r:system_lib_file:s0 file execute
+u:r:hal_cas_default:s0 u:object_r:system_lib_file:s0 file execute
+u:r:vendor_hal_drm_widevine:s0 u:object_r:system_lib_file:s0 file execute
+u:r:hal_audio_default:s0 u:object_r:system_lib_file:s0 file read  # 32-bit bionic in /system/lib/bootstrap (system_lib_file by design, acilis-loglari/codec2-20261022/KOK-NEDEN.md)
+u:r:mediacodec:s0 u:object_r:system_lib_file:s0 file read  # 32-bit bionic in /system/lib/bootstrap (system_lib_file by design, acilis-loglari/codec2-20261022/KOK-NEDEN.md)
+u:r:hal_cas_default:s0 u:object_r:system_lib_file:s0 file read  # 32-bit bionic in /system/lib/bootstrap (system_lib_file by design, acilis-loglari/codec2-20261022/KOK-NEDEN.md)
+u:r:vendor_hal_drm_widevine:s0 u:object_r:system_lib_file:s0 file read  # 32-bit bionic in /system/lib/bootstrap (system_lib_file by design, acilis-loglari/codec2-20261022/KOK-NEDEN.md)
+
+# netbpfload (/system/bin/netbpfload, bpfloader_exec) and gbos-bootlog started by init
+u:r:init:s0 u:r:bpfloader:s0 process transition
+u:r:bpfloader:s0 u:object_r:bpfloader_exec:s0 file entrypoint
+u:r:init:s0 u:r:gbos_bootlog:s0 process transition
+u:r:gbos_bootlog:s0 u:object_r:logcat_exec:s0 file entrypoint
+
+# gbos-vpd-executor (mica-servisleri): lazy IVpdExecutor on /system
+u:r:init:s0 u:r:gbos_vpd_executor:s0 process transition
+u:r:gbos_vpd_executor:s0 u:object_r:gbos_vpd_executor_exec:s0 file entrypoint
+u:r:gbos_vpd_executor:s0 u:object_r:vpd_executor_service:s0 service_manager add
+u:r:servicemanager:s0 u:r:gbos_vpd_executor:s0 binder call
+u:r:gbos_vpd_executor:s0 u:r:servicemanager:s0 binder call
+u:r:system_server:s0 u:r:gbos_vpd_executor:s0 binder call
+u:r:system_app:s0 u:r:gbos_vpd_executor:s0 binder call
+u:r:system_app:s0 u:object_r:vpd_executor_service:s0 service_manager find
+u:r:gbos_vpd_executor:s0 u:object_r:serialno_prop:s0 file read
+u:r:gbos_vpd_executor:s0 u:object_r:bootloader_prop:s0 file read
+u:r:gbos_vpd_executor:s0 u:object_r:build_vendor_prop:s0 file read
+u:r:gbos_vpd_executor:s0 u:object_r:system_data_file:s0 dir search
+u:r:gbos_vpd_executor:s0 u:object_r:gbos_vpd_data_file:s0 dir add_name
+u:r:gbos_vpd_executor:s0 u:object_r:gbos_vpd_data_file:s0 file create
+u:r:gbos_vpd_executor:s0 u:object_r:gbos_vpd_data_file:s0 file rename
+u:r:init:s0 u:object_r:gbos_vpd_data_file:s0 dir create
+u:r:init:s0 u:object_r:gbos_vpd_data_file:s0 dir setattr
+# only the executor and the platform may register it
+-u:r:untrusted_app:s0:c512,c768 u:object_r:vpd_executor_service:s0 service_manager add
+
+# Googlebook Linux environment (terminal): service from init, guests by exec, app as client (terminal/selinux/beklenen.txt, 22 Oct: priv_app_36 is the Terminal app's domain)
+u:r:init:s0 u:r:gbos_linuxd:s0 unix_stream_socket create
+u:r:init:s0 u:r:gbos_linuxd:s0 unix_stream_socket bind
+u:r:init:s0 u:object_r:gbos_linux_socket:s0 sock_file create
+u:r:priv_app_36:s0:c512,c768 u:object_r:gbos_linux_socket:s0 sock_file write
+u:r:priv_app_36:s0:c512,c768 u:r:gbos_linuxd:s0 unix_stream_socket connectto
+u:r:priv_app:s0:c512,c768 u:r:gbos_linuxd:s0 unix_stream_socket connectto
+u:r:priv_app_36:s0:c512,c768 u:r:gbos_linuxd:s0 fd use
+u:r:priv_app_36:s0:c512,c768 u:object_r:gbos_linux_devpts:s0 chr_file read
+u:r:priv_app_36:s0:c512,c768 u:object_r:gbos_linux_devpts:s0 chr_file write
+u:r:priv_app_36:s0:c512,c768 u:object_r:gbos_linux_devpts:s0 chr_file ioctl
+u:r:su:s0 u:r:gbos_linuxd:s0 unix_stream_socket connectto
+u:r:gbos_linuxd:s0 u:r:gbos_linux:s0 process transition
+u:r:init:s0 u:object_r:gbos_linuxd_exec:s0 file execute
+u:r:gbos_linuxd:s0 u:object_r:gbos_linuxd_exec:s0 file entrypoint
+-u:r:gbos_linuxd:s0 u:object_r:system_file:s0 file entrypoint
+u:r:gbos_linux:s0 u:object_r:gbos_linux_data_file:s0 file entrypoint
+u:r:gbos_linux:s0 u:object_r:fuse:s0 file write
+u:r:gbos_linux:s0 u:r:gbos_linuxd:s0 unix_stream_socket connectto
+u:r:shell:s0 u:r:gbos_linuxd:s0 unix_stream_socket connectto
+-u:r:untrusted_app:s0:c512,c768 u:r:gbos_linuxd:s0 unix_stream_socket connectto
+
+# adb root (su): enforcing domains reply to and share fds/sockets with a root shell
+u:r:system_server:s0 u:r:su:s0 binder call
+u:r:untrusted_app:s0:c512,c768 u:r:su:s0 unix_stream_socket connectto
+u:r:system_server:s0 u:r:su:s0 fd use
+u:r:adbd:s0 u:r:su:s0 process dyntransition
+
+# The mode switch: only the permissive build lets init turn enforcing off
+u:r:init:s0 u:object_r:kernel:s0 security setenforce  # kip=permissive
+-u:r:init:s0 u:object_r:kernel:s0 security setenforce  # kip=enforcing
+
+# "Tablet modu" (tablet-modu/, 71-gbos-tablet-modu.cil): the tile writes the kernel switch, init
+# opens it on boot, ordinary apps may not touch it
+u:r:priv_app:s0:c512,c768 u:object_r:gbos_tablet_mode_sysfs:s0 file write
+u:r:priv_app:s0:c512,c768 u:object_r:gbos_tablet_mode_sysfs:s0 file open
+u:r:init:s0 u:object_r:gbos_tablet_mode_sysfs:s0 file setattr
+-u:r:untrusted_app:s0:c512,c768 u:object_r:gbos_tablet_mode_sysfs:s0 file write
+-u:r:platform_app:s0:c512,c768 u:object_r:gbos_tablet_mode_sysfs:s0 file write

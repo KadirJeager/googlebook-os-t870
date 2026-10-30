@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="uygulama_adi">Tablet modu</string>
+    <string name="kutucuk_adi">Tablet modu</string>
+    <string name="kutucuk_acik">Klavye kapalı</string>
+    <string name="kutucuk_kapali">Kılıfa göre</string>
+    <string name="kutucuk_yok">Desteklenmiyor</string>
+</resources>

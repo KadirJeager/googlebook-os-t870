@@ -1,0 +1,14 @@
+;; Sense face unlock (yuz-tanima/): the IFace/default V4 HAL is a Java program started by init
+;; (system/etc/init/sense-face-hal.rc: app_process64 with seclabel u:r:system_server:s0, so it
+;; gets the system context ActivityThread.systemMain() needs). The Sense app (co.aospa.sense,
+;; a privileged app) looks the HAL up by name and hands it its SenseService binder. mica places
+;; privileged apps by target SDK (plat_seapp_contexts: minTargetSdkVersion=37 -> priv_app, older ->
+;; priv_app_36; Sense targets SDK 35), so the lookup is granted to priv_app_all, the attribute of
+;; every such domain (without it enforcing reports "Face hardware unavailable",
+;; selinux/kanit/*-yuz, 22 Oct 2026). A domain of its own for Sense would lose the LineageOS
+;; vendor's rules for priv_app (GPU/kgsl, gles data), which reach only the domains in its
+;; versioned priv_app_202604 attribute (selinux/BENIOKU.md, "Bilinen açık noktalar").
+(allow init system_server (process (transition rlimitinh siginh noatsecure)))
+(allow system_server zygote_exec (file (read open getattr execute execute_no_trans map entrypoint)))
+(allow system_server hal_face_service (service_manager (add find)))
+(allow priv_app_all hal_face_service (service_manager (find)))

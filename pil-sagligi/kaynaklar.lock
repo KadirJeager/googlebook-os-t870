@@ -1,0 +1,16 @@
+# Upstream sources of the health HAL build (araclar/kaynak-getir.py; BENIOKU.md "Kaynaklar").
+# name  git-url  commit  comma-separated-paths  content-sha256
+# LineageOS lineage-24.0 heads (23 Oct 2026): the tablet's vendor HAL is built from these trees.
+hardware_samsung https://github.com/LineageOS/android_hardware_samsung fa202d96b62362e756f160e60a80f675add412a0 aidl/health a34e1f9bd72eac4924fc66409fa554ded34c09c9b064b7c74492e8b2b55e5282
+system_core https://github.com/LineageOS/android_system_core 65d661b1a536701e8b118be4e9728d7b5ca727c9 healthd,libcutils,libutils,libsystem a4af4ff157583d8a703446f2a7569290b26f1ed11809c39ec27a474d69655ee5
+# AOSP android-17.0.0_r1 (LineageOS does not fork these, or its fork is identical for health/)
+hardware_interfaces https://android.googlesource.com/platform/hardware/interfaces 0162af698935100a590b7359581ac8b1b80693e5 health aa378195091a2d6b25b9d25bf88025e7e3b5facdd7ecea1f74dbaf907a3bd6d9
+libbase https://android.googlesource.com/platform/system/libbase fef4173e19d97cd4b4fc09a06bccbf800d0d3937 . 5cf1018910700795b4144431dbeedb6c378f7d6a5b65fde80f34eb5753f192f5
+logging https://android.googlesource.com/platform/system/logging d35ba620451b28512f46ebb5421f783fd77968d5 liblog 567e29e64e79549ad671c7e7b1aa243257af283c03304091dccd2f3333ab3367
+libhidl https://android.googlesource.com/platform/system/libhidl 061055fc4dad78e5d25a77d9217001794656f16b base,transport 463aeec8d8ddcb34bb11ce63d1de6c25f6a54d41ef0b00bfa506367bf83114c5
+hidl_tools https://android.googlesource.com/platform/system/tools/hidl 5d0e05e6535fea94a674a359102bdd42944714f4 . 012d80d1067bcddcb2e6f570d134fb5f60cd17ed1e1066f3c01223a52b6e5bb5
+libhwbinder https://android.googlesource.com/platform/system/libhwbinder 2f5282448223b97c541181a5b94a05c2ac17ff17 include 369b635d0a4edc9e60e8834b6401443e57d60a85915e41678b76c6411617f186
+fmtlib https://android.googlesource.com/platform/external/fmtlib e3bef0ad2e9d4ea38ba3b4b2b59e0514f7025fed include,src 43e483aeda02e0dc02bffc762180cca708314c4568592969cbba391f5d92a837
+frameworks_native https://android.googlesource.com/platform/frameworks/native ae266dcb706d083868578cfedce381ef44488a07 libs/binder/ndk/include_cpp,libs/binder/ndk/include_ndk,libs/binder/ndk/include_platform,services/batteryservice/include 220f1337de787094b5e7601a00209ae0b04f5fb4502118c7bca36df8c79e1724
+connectivity https://android.googlesource.com/platform/packages/modules/Connectivity 347fbd34b368d19f0d87e908ea101eed3601a731 bpf/headers/include,bpf/syscall_wrappers/include 02da0fb68282f0df424700cc051a8663b276155a37a2f66d3a151996f83ff401
+libfmq https://android.googlesource.com/platform/system/libfmq d525961b46fbebd138018a102e4ab983c9582045 base 22fa9c2c28e9d07ff9ef9dc284ede51807ad40119f6a1663933c80c13d7d2622

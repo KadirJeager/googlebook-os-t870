@@ -1,0 +1,16 @@
+# Access the Linux environment needs, as "scontext tcontext class permission" (selinux/politika/beklenen.txt format).
+u:r:init:s0 u:r:gbos_linuxd:s0 unix_stream_socket create
+u:r:init:s0 u:r:gbos_linuxd:s0 unix_stream_socket bind
+u:r:init:s0 u:object_r:gbos_linux_socket:s0 sock_file create
+u:r:priv_app_36:s0:c512,c768 u:object_r:gbos_linux_socket:s0 sock_file write
+u:r:priv_app_36:s0:c512,c768 u:r:gbos_linuxd:s0 unix_stream_socket connectto
+u:r:priv_app:s0:c512,c768 u:r:gbos_linuxd:s0 unix_stream_socket connectto
+u:r:priv_app_36:s0:c512,c768 u:r:gbos_linuxd:s0 fd use
+u:r:priv_app_36:s0:c512,c768 u:object_r:gbos_linux_devpts:s0 chr_file read
+u:r:priv_app_36:s0:c512,c768 u:object_r:gbos_linux_devpts:s0 chr_file write
+u:r:priv_app_36:s0:c512,c768 u:object_r:gbos_linux_devpts:s0 chr_file ioctl
+u:r:su:s0 u:r:gbos_linuxd:s0 unix_stream_socket connectto
+u:r:gbos_linuxd:s0 u:r:gbos_linux:s0 process transition
+u:r:gbos_linux:s0 u:object_r:gbos_linux_data_file:s0 file entrypoint
+u:r:gbos_linux:s0 u:object_r:fuse:s0 file write
+u:r:gbos_linux:s0 u:r:gbos_linuxd:s0 unix_stream_socket connectto

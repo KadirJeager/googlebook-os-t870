@@ -1,0 +1,35 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: KadirJeager <KadirJeager@users.noreply.github.com>
+Date: Fri, 30 Oct 2026 00:00:00 +0000
+Subject: [PATCH 2/2] FaceSense: add Turkish translation
+
+---
+ res/values-tr/strings.xml | 19 +++++++++++++++++++
+ 1 file changed, 19 insertions(+)
+ create mode 100644 res/values-tr/strings.xml
+
+diff --git a/res/values-tr/strings.xml b/res/values-tr/strings.xml
+new file mode 100644
+index 0000000..a94dae5
+--- /dev/null
++++ b/res/values-tr/strings.xml
+@@ -0,0 +1,19 @@
++<?xml version="1.0" encoding="utf-8"?>
++<resources>
++    <string name="app_name">Yüz Tanıma Servisi</string>
++    <string name="face_unlock_channel_name">Yüz tanıma</string>
++    <string name="face_unlock_notification_title">Yüzünüz aranıyor</string>
++    <string name="face_enroll_title">Yüzünüzü kamerada ortalayın</string>
++    <string name="face_enroll_description">Sabit durun ve iyi aydınlatılmış bir ortamda olduğunuzdan emin olun</string>
++    <string name="face_try_again_title">Yüzünüz kaydedilemedi</string>
++    <string name="face_try_again_description">Tekrar denemek için aşağıya dokunun. İyi aydınlatılmış bir ortamda olduğunuzdan ve yüzünüzü hiçbir şeyin kapatmadığından emin olun</string>
++    <string name="btn_try_again">Tekrar dene</string>
++    <string name="attr_light_dark">Daha fazla ışık gerekiyor</string>
++    <string name="attr_light_high">Işık çok fazla</string>
++    <string name="attr_light_shadow">Yüzünüzde çok fazla gölge var</string>
++    <string name="unlock_failed_face_blur">Görüntü çok bulanık</string>
++    <string name="unlock_failed_face_large">Yüzünüz kameraya çok yakın</string>
++    <string name="unlock_failed_face_multi">Birden fazla yüz algılandı</string>
++    <string name="unlock_failed_face_not_complete">Yüzünüzün tamamı görünmüyor</string>
++    <string name="unlock_failed_face_small">Yüzünüz kameraya çok uzak</string>
++</resources>

@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="uygulama_adi">System update</string>
+    <string name="baslik">System update</string>
+    <string name="kanal_adi">System updates</string>
+
+    <string name="guncel_baslik">Your system is up to date</string>
+    <string name="guncel_metin">Googlebook OS checks for a new release every day and installs it overnight while the tablet charges.</string>
+    <string name="yeni_baslik">System update available</string>
+    <string name="yeni_metin">Googlebook OS %1$d (%2$s). The tablet prepares it on Wi-Fi while charging; your data is kept.</string>
+    <string name="hazirlaniyor_baslik">Preparing the update</string>
+    <string name="hazirlaniyor_metin">The new release is downloaded and adapted to this tablet. You can keep using it.</string>
+    <string name="hazir_baslik">Update ready</string>
+    <string name="hazir_metin">Googlebook OS %1$s will be installed tonight while the tablet charges, or now with a restart. Installing takes about ten minutes; your data is kept. If the new version does not start properly, the tablet returns to the current one by itself.</string>
+    <string name="kuruluyor_baslik">Installing the update</string>
+    <string name="deneme_baslik">Checking the new version</string>
+    <string name="deneme_metin">The tablet confirms that the new version runs well. If it does not, it returns to the previous version by itself.</string>
+    <string name="guncellendi_baslik">Your system is up to date</string>
+    <string name="guncellendi_metin">The update was installed.</string>
+    <string name="geri_baslik">The update was rolled back</string>
+    <string name="geri_metin">The new version did not start properly, so the tablet returned to the previous version. Your data is as it was before the update.</string>
+    <string name="geri_donuluyor_baslik">Returning to the previous version</string>
+    <string name="duraklatildi_baslik">Preparation paused</string>
+    <string name="duraklatildi_metin">It continues where it stopped.</string>
+    <string name="hata_baslik">Couldn\'t update</string>
+    <string name="servis_yok">The update service is not running.</string>
+    <string name="denetlenemedi">Couldn\'t check for updates: %1$s</string>
+
+    <string name="denetle">Check for update</string>
+    <string name="denetleniyor">Checking…</string>
+    <string name="hazirla">Download &amp; prepare</string>
+    <string name="durdur">Pause</string>
+    <string name="devam">Resume</string>
+    <string name="simdi_yeniden_baslat">Restart now</string>
+    <string name="yeniden_dene">Try again</string>
+
+    <string name="onay_baslik">Restart and install?</string>
+    <string name="onay_metin">The tablet restarts, installs Googlebook OS %1$s and starts again. This takes about ten minutes; don\'t turn it off.</string>
+    <string name="iptal">Cancel</string>
+    <string name="pil_yetersiz">Charge the tablet first: at least %1$d %%, or %2$d %% while charging.</string>
+
+    <string name="ayrinti_surum">Googlebook OS version</string>
+    <string name="ayrinti_son_denetim">Last checked</string>
+    <string name="ayrinti_sunucu">Newest release</string>
+    <string name="ayrinti_onceki">Previous version kept</string>
+    <string name="hic">Never</string>
+
+    <string name="bildirim_yeni_baslik">System update available</string>
+    <string name="bildirim_yeni_metin">Googlebook OS %1$d (%2$s) will be prepared on Wi-Fi while the tablet charges.</string>
+    <string name="bildirim_hazir_baslik">Update ready</string>
+    <string name="bildirim_hazir_metin">It will be installed tonight while the tablet charges.</string>
+    <string name="bildirim_guncellendi_baslik">System updated</string>
+    <string name="bildirim_guncellendi_metin">Googlebook OS was updated.</string>
+    <string name="bildirim_geri_baslik">Update rolled back</string>
+    <string name="bildirim_geri_metin">The new version did not start properly; the tablet returned to the previous one.</string>
+    <string name="bildirim_hata_baslik">Couldn\'t update</string>
+</resources>

@@ -1,0 +1,176 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: KadirJeager <KadirJeager@users.noreply.github.com>
+Date: Sun, 25 Oct 2026 06:00:00 +0300
+Subject: [PATCH] input: pogo: let userspace force tablet mode with an open
+ cover
+
+The keyboard MCU reports three cover positions: closed over the screen,
+open, and folded flat behind the screen. A cover standing behind the
+screen at an angle (the tablet propped up on the folded keyboard) reads
+as open, byte for byte the same as the laptop position, so the keyboard
+and touchpad stay registered with the keys pressed against the desk.
+
+Add a tablet_mode attribute to the sec_keypad device. While it is 1, an
+open cover is passed to the pogo listeners as folded back, so the
+keyboard and touchpad leave and hall_logical reports SW_TABLET_MODE
+through the same path as a cover that really is folded back. A cover
+closed over the screen stays closed (SW_LID, sleep). Writing 0 passes
+the MCU's position on again. The setting survives detach; on attach in
+forced mode the folded-back position is announced before ATTACHED so
+the keyboard never registers.
+
+The MCU's own position is kept in lid_position and still drives
+hall_closed.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../keyboard/stm/stm32l0/stm32_pogo_i2c.c     | 80 ++++++++++++++++++-
+ .../keyboard/stm/stm32l0/stm32_pogo_i2c.h     |  2 +
+ 2 files changed, 78 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/input/keyboard/stm/stm32l0/stm32_pogo_i2c.c b/drivers/input/keyboard/stm/stm32l0/stm32_pogo_i2c.c
+index f85bb7301..26bdfb802 100644
+--- a/drivers/input/keyboard/stm/stm32l0/stm32_pogo_i2c.c
++++ b/drivers/input/keyboard/stm/stm32l0/stm32_pogo_i2c.c
+@@ -822,16 +822,45 @@ static int stm32_dev_kpc_enable(struct stm32_dev *stm32)
+ 	return 0;
+ }
+ 
++/*
++ * The cover position the listeners (hall_logical, keyboard, touchpad) see.
++ * The MCU tells closed, open and folded flat behind the screen apart, but a
++ * cover standing behind the screen at an angle reads as open, the same as
++ * the laptop position. With tablet mode forced through the tablet_mode
++ * attribute an open cover is passed on as folded back, so the keyboard and
++ * touchpad leave and SW_TABLET_MODE is set exactly as when the cover really
++ * is folded back. A cover closed over the screen stays closed.
++ */
++static u8 stm32_lid_for_listeners(struct stm32_dev *stm32, u8 lid)
++{
++	if (stm32->tablet_mode_forced && lid != E_LID_0)
++		return E_LID_360;
++	return lid;
++}
++
++static void stm32_notify_lid(struct stm32_dev *stm32)
++{
++	char lid = stm32_lid_for_listeners(stm32,
++			stm32->lid_position ? stm32->lid_position : E_LID_NORMAL);
++
++	pogo_notifier_notify(stm32, POGO_NOTIFIER_EVENTID_HALL, &lid, 1);
++	pogo_notifier_notify(stm32, POGO_NOTIFIER_ID_RESET, 0, 0);
++}
++
+ static void stm32_send_conn_noti(struct stm32_dev *stm32)
+ {
+ 	char str_conn[16] = { 0 };
+ 	char *event[2] = { str_conn, NULL };
+ 
+-	
+-	if (stm32->connect_state)
++	if (stm32->connect_state) {
++		/* forced tablet mode: the keyboard must not register first */
++		if (stm32->tablet_mode_forced)
++			stm32_notify_lid(stm32);
+ 		pogo_notifier_notify(stm32, POGO_NOTIFIER_ID_ATTACHED, 0, 0);
+-	else
++	} else {
++		stm32->lid_position = 0;
+ 		pogo_notifier_notify(stm32, POGO_NOTIFIER_ID_DETACHED, 0, 0);
++	}
+ 	snprintf(str_conn, 16, "CONNECT=%d", stm32->connect_state);
+ 	kobject_uevent_env(&stm32->sec_pogo->kobj, KOBJ_CHANGE, event);
+ 	input_info(true, &stm32->client->dev, "%s: send uevent : %s\n", __func__, event[0]);
+@@ -894,6 +923,11 @@ static void stm32_dev_int_proc(struct stm32_dev *stm32)
+ 
+ 	mutex_unlock(&stm32->i2c_lock);
+ 
++	if (buff[2] == POGO_NOTIFIER_EVENTID_HALL && payload_size == 1) {
++		stm32->lid_position = event_data[0];
++		event_data[0] = stm32_lid_for_listeners(stm32, event_data[0]);
++	}
++
+ 	if (buff[2] > POGO_NOTIFIER_EVENTID_MCU && buff[2] < POGO_NOTIFIER_EVENTID_MAX)
+ 		pogo_notifier_notify(stm32, buff[2], event_data, payload_size);
+ 	else
+@@ -903,7 +937,7 @@ static void stm32_dev_int_proc(struct stm32_dev *stm32)
+ 	/* release all event if hall ic event occured */
+ 	if (buff[2] == POGO_NOTIFIER_EVENTID_HALL) {
+ 		pogo_notifier_notify(stm32, POGO_NOTIFIER_ID_RESET, 0, 0);
+-		stm32->hall_closed = (event_data[0] != 2);
++		stm32->hall_closed = (stm32->lid_position != E_LID_NORMAL);
+ 		if (stm32->hall_flag && !stm32->hall_closed) {
+ 			input_info(true, &stm32->client->dev,
+ 				"%s: hall_flag %d, hall_closed:%d\n", __func__, stm32->hall_flag, stm32->hall_closed);
+@@ -1267,6 +1301,42 @@ static ssize_t keyboard_connected_store(struct device *dev,
+ 	return size;
+ }
+ 
++/*
++ * tablet_mode: 1 treats an open cover as folded back (see
++ * stm32_lid_for_listeners), 0 follows the MCU. Takes effect at once when a
++ * keyboard is attached, otherwise when one is.
++ */
++static ssize_t tablet_mode_store(struct device *dev,
++		struct device_attribute *attr, const char *buf, size_t size)
++{
++	struct stm32_dev *data = dev_get_drvdata(dev);
++	bool forced;
++	int err;
++
++	err = kstrtobool(buf, &forced);
++	if (err)
++		return err;
++
++	mutex_lock(&data->dev_lock);
++	if (data->tablet_mode_forced != forced) {
++		data->tablet_mode_forced = forced;
++		input_info(true, &data->client->dev, "%s: %d\n", __func__, forced);
++		if (data->connect_state)
++			stm32_notify_lid(data);
++	}
++	mutex_unlock(&data->dev_lock);
++
++	return size;
++}
++
++static ssize_t tablet_mode_show(struct device *dev,
++		struct device_attribute *attr, char *buf)
++{
++	struct stm32_dev *data = dev_get_drvdata(dev);
++
++	return snprintf(buf, PAGE_SIZE, "%d\n", data->tablet_mode_forced);
++}
++
+ static ssize_t keyboard_connected_show(struct device *dev,
+ 		struct device_attribute *attr, char *buf)
+ {
+@@ -1873,6 +1943,7 @@ static ssize_t get_mcu_fw_ver(struct device *dev,
+ }
+ 
+ static DEVICE_ATTR(keyboard_connected, 0644, keyboard_connected_show, keyboard_connected_store);
++static DEVICE_ATTR(tablet_mode, 0644, tablet_mode_show, tablet_mode_store);
+ static DEVICE_ATTR(hw_reset, 0444, hw_reset_show, NULL);
+ static DEVICE_ATTR(get_fw_ver_bin, 0444, pogo_get_fw_ver_bin, NULL);
+ static DEVICE_ATTR(get_fw_ver_ic, 0444, pogo_get_fw_ver_ic, NULL);
+@@ -1893,6 +1964,7 @@ static DEVICE_ATTR(get_mcu_fw_ver, 0444, get_mcu_fw_ver, NULL);
+ 
+ static struct attribute *key_attributes[] = {
+ 	&dev_attr_keyboard_connected.attr,
++	&dev_attr_tablet_mode.attr,
+ 	&dev_attr_hw_reset.attr,
+ 	&dev_attr_get_fw_ver_bin.attr,
+ 	&dev_attr_get_fw_ver_ic.attr,
+diff --git a/drivers/input/keyboard/stm/stm32l0/stm32_pogo_i2c.h b/drivers/input/keyboard/stm/stm32l0/stm32_pogo_i2c.h
+index 5d374328f..6935d2ebe 100644
+--- a/drivers/input/keyboard/stm/stm32l0/stm32_pogo_i2c.h
++++ b/drivers/input/keyboard/stm/stm32l0/stm32_pogo_i2c.h
+@@ -372,6 +372,8 @@ struct stm32_dev {
+ 	u32					reset_count;
+ 
+ 	volatile bool				hall_closed;
++	u8					lid_position;	/* last E_LID_* from the MCU, 0 unknown */
++	bool					tablet_mode_forced;
+ 	int					debug_flag;
+ 	bool					hall_flag;
+ 	struct completion			i2c_done;

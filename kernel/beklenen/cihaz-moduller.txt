@@ -1,0 +1,12 @@
+# Sat Oct 24 18:49:48 UTC 2026 adb root: .ko araması ve /proc/modules
+/: 0 .ko
+/vendor: 0 .ko
+/odm: 0 .ko
+/system: 0 .ko
+/system_ext: 0 .ko
+/product: 0 .ko
+/vendor_dlkm: 0 .ko
+/system_dlkm: 0 .ko
+/data/local: 0 .ko
+/proc/modules satır: 0
+0

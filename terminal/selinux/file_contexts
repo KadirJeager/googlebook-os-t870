@@ -1,0 +1,6 @@
+# --- GBOS_TERMINAL BEGIN: Googlebook Linux environment (T870-araclar/terminal) ---
+/data/gbos-linux(/.*)?                     u:object_r:gbos_linux_data_file:s0
+/data/misc_ce/[0-9]+/gbos-linux(/.*)?      u:object_r:gbos_linux_data_file:s0
+/dev/socket/gbos_linux                     u:object_r:gbos_linux_socket:s0
+/system/bin/gbos-linuxd                    u:object_r:gbos_linuxd_exec:s0
+# --- GBOS_TERMINAL END ---

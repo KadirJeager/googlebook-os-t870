@@ -1,0 +1,1489 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: KadirJeager <KadirJeager@users.noreply.github.com>
+Date: Fri, 30 Oct 2026 00:00:00 +0000
+Subject: [PATCH 1/2] FaceSense: Googlebook OS port for the Galaxy Tab S7
+ (SM-T870)
+
+- Platform enrollment through ISenseServiceReceiver
+  (onStartPlatformEnroll, onCancelPlatformEnroll).
+- Persistent camera foreground service that serves every user
+  (INTERACT_ACROSS_USERS), allowed in power and data saver.
+- Built outside the platform build system: DeviceDefault themes
+  instead of SetupWizard, public system palette colours instead of
+  private ones, resizeable activities for the tablet.
+- Empty enrollment guidance page in the overlay config.
+---
+ AndroidManifest.xml                           |  17 +-
+ .../face/ISenseServiceReceiver.aidl           |   4 +
+ overlay/res/values/config.xml                 |   1 +
+ .../privapp_whitelist_co.aospa.sense.xml      |   6 +-
+ res/color/button_ripple_color_selector.xml    |   8 +-
+ res/drawable/ic_face_24px.xml                 |   4 +-
+ res/layout/face_enroll.xml                    |  93 +++--
+ res/layout/face_enroll_try_again.xml          |  49 ++-
+ res/values-night/styles.xml                   |   3 -
+ res/values/colors.xml                         |  52 +--
+ res/values/strings.xml                        |   2 +
+ res/values/styles.xml                         |   3 -
+ src/co/aospa/sense/SenseService.kt            | 390 ++++++++++++++++--
+ .../aospa/sense/activities/EnrollActivity.kt  |  87 ++--
+ .../sense/activities/FaceBaseActivity.kt      |  25 +-
+ .../sense/activities/TryAgainActivity.kt      |  32 +-
+ .../FaceAuthenticationController.kt           |   3 +
+ .../sense/controller/FaceEnrollController.kt  |  12 +-
+ src/co/aospa/sense/util/PreferenceHelper.kt   |   5 +-
+ src/co/aospa/sense/util/SenseUserContext.kt   |  14 +-
+ 20 files changed, 566 insertions(+), 244 deletions(-)
+
+diff --git a/AndroidManifest.xml b/AndroidManifest.xml
+index 4bcd227..2bd0728 100644
+--- a/AndroidManifest.xml
++++ b/AndroidManifest.xml
+@@ -1,9 +1,10 @@
+ <?xml version="1.0" encoding="utf-8" standalone="no"?>
+ <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+     xmlns:tools="http://schemas.android.com/tools"
+-    android:sharedUserId="android.uid.system"
+     package="co.aospa.sense">
+ 
++    <uses-sdk android:minSdkVersion="35" android:targetSdkVersion="35" />
++
+     <uses-permission android:name="android.permission.CAMERA" />
+     <uses-permission android:name="android.permission.CAMERA_OPEN_CLOSE_LISTENER"/>
+     <uses-permission android:name="android.permission.SYSTEM_CAMERA"/>
+@@ -14,13 +15,18 @@
+     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+     <uses-permission android:name="android.permission.USE_BIOMETRIC_INTERNAL" />
+     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
++    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
++    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA"/>
++    <uses-permission android:name="android.permission.INTERACT_ACROSS_USERS"/>
++    <uses-permission android:name="android.permission.INTERACT_ACROSS_USERS_FULL"/>
+ 
+     <application
+         android:icon="@drawable/ic_launcher"
+         android:name=".SenseApp"
++        android:persistent="true"
+         android:allowBackup="false"
+         android:label="@string/app_name"
+-        android:resizeableActivity="false"
++        android:resizeableActivity="true"
+         android:supportsRtl="true"
+         android:enableOnBackInvokedCallback="true"
+         android:allowClearUserData="false">
+@@ -29,19 +35,18 @@
+             android:exported="true"
+             android:excludeFromRecents="true"
+             android:launchMode="standard"
+-            android:screenOrientation="portrait"
+-            android:theme="@style/SudThemeGlifV4.DayNight" />
++            android:theme="@android:style/Theme.DeviceDefault.DayNight" />
+ 
+         <activity
+             android:name=".activities.TryAgainActivity"
+             android:excludeFromRecents="true"
+             android:launchMode="standard"
+-            android:screenOrientation="portrait"
+-            android:theme="@style/SudThemeGlifV4.DayNight" />
++            android:theme="@android:style/Theme.DeviceDefault.DayNight" />
+ 
+         <service
+             android:name=".SenseService"
+             android:exported="true"
++            android:foregroundServiceType="camera"
+             android:label="@string/app_name"
+             android:permission="android.permission.MANAGE_BIOMETRIC">
+             <intent-filter>
+diff --git a/interfaces/biometrics/face/aidl/src/vendor/aospa/biometrics/face/ISenseServiceReceiver.aidl b/interfaces/biometrics/face/aidl/src/vendor/aospa/biometrics/face/ISenseServiceReceiver.aidl
+index 8a2c070..e8eb519 100644
+--- a/interfaces/biometrics/face/aidl/src/vendor/aospa/biometrics/face/ISenseServiceReceiver.aidl
++++ b/interfaces/biometrics/face/aidl/src/vendor/aospa/biometrics/face/ISenseServiceReceiver.aidl
+@@ -31,4 +31,8 @@ oneway interface ISenseServiceReceiver {
+     void onEnumerate(in int[] faceIds, int userId);
+ 
+     void onLockoutChanged(long duration);
++
++    void onStartPlatformEnroll(int userId, in byte[] token, in int[] disabledFeatures);
++
++    void onCancelPlatformEnroll();
+ }
+diff --git a/overlay/res/values/config.xml b/overlay/res/values/config.xml
+index 2602fe6..ae2c2bf 100644
+--- a/overlay/res/values/config.xml
++++ b/overlay/res/values/config.xml
+@@ -16,6 +16,7 @@
+ <resources>
+     <!-- ComponentName to launch a vendor-specific enrollment activity if available -->
+     <string name="config_face_enroll" translatable="false">co.aospa.sense/co.aospa.sense.activities.EnrollActivity</string>
++    <string name="config_face_enroll_guidance_page" translatable="false"></string>
+     
+     <!-- Whether to use the Lottie animation for the face education enrollment screen -->
+     <bool name="config_face_education_use_lottie">true</bool>
+diff --git a/permissions/privapp_whitelist_co.aospa.sense.xml b/permissions/privapp_whitelist_co.aospa.sense.xml
+index f2a2410..665ab1c 100644
+--- a/permissions/privapp_whitelist_co.aospa.sense.xml
++++ b/permissions/privapp_whitelist_co.aospa.sense.xml
+@@ -14,11 +14,13 @@
+      limitations under the License.
+ -->
+ <permissions>
+-
++    <allow-in-power-save package="co.aospa.sense"/>
++    <allow-in-data-usage-save package="co.aospa.sense"/>
+     <privapp-permissions package="co.aospa.sense">
+         <permission name="android.permission.SYSTEM_CAMERA"/>
+         <permission name="android.permission.WRITE_SECURE_SETTINGS"/>
+         <permission name="android.permission.SCHEDULE_EXACT_ALARM"/>
++        <permission name="android.permission.INTERACT_ACROSS_USERS"/>
++        <permission name="android.permission.INTERACT_ACROSS_USERS_FULL"/>
+     </privapp-permissions>
+-
+ </permissions>
+diff --git a/res/color/button_ripple_color_selector.xml b/res/color/button_ripple_color_selector.xml
+index c37a7aa..62e7244 100644
+--- a/res/color/button_ripple_color_selector.xml
++++ b/res/color/button_ripple_color_selector.xml
+@@ -1,7 +1,5 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <selector xmlns:android="http://schemas.android.com/apk/res/android">
+-    <item android:alpha="0.12" android:color="?attr/colorOnSurface" android:state_checked="true" android:state_pressed="true" />
+-    <item android:alpha="0.12" android:color="?attr/colorOnSecondary" android:state_checked="true" android:state_focused="true" />
+-    <item android:alpha="0.08" android:color="?attr/colorOnSecondary" android:state_checked="true" android:state_hovered="true" />
+-    <item android:alpha="0.16" android:color="?attr/colorOnSecondary" android:state_checked="true" />
+-</selector>
+\ No newline at end of file
++    <item android:alpha="0.12" android:color="?android:attr/colorControlNormal" android:state_checked="true" android:state_pressed="true" />
++    <item android:alpha="0.16" android:color="?android:attr/colorControlNormal" android:state_checked="true" />
++</selector>
+diff --git a/res/drawable/ic_face_24px.xml b/res/drawable/ic_face_24px.xml
+index d62b018..81a943d 100644
+--- a/res/drawable/ic_face_24px.xml
++++ b/res/drawable/ic_face_24px.xml
+@@ -3,8 +3,8 @@
+     android:height="24dp"
+     android:viewportWidth="960"
+     android:viewportHeight="960"
+-    android:tint="?attr/colorControlNormal">
++    android:tint="?android:attr/colorControlNormal">
+   <path
+       android:fillColor="@android:color/white"
+-      android:pathData="M360,570Q339,570 324.5,555.5Q310,541 310,520Q310,499 324.5,484.5Q339,470 360,470Q381,470 395.5,484.5Q410,499 410,520Q410,541 395.5,555.5Q381,570 360,570ZM600,570Q579,570 564.5,555.5Q550,541 550,520Q550,499 564.5,484.5Q579,470 600,470Q621,470 635.5,484.5Q650,499 650,520Q650,541 635.5,555.5Q621,570 600,570ZM480,800Q614,800 707,707Q800,614 800,480Q800,456 797,433.5Q794,411 786,390Q765,395 744,397.5Q723,400 700,400Q609,400 528,361Q447,322 390,252Q358,330 298.5,387.5Q239,445 160,474Q160,476 160,477Q160,478 160,480Q160,614 253,707Q346,800 480,800ZM480,880Q397,880 324,848.5Q251,817 197,763Q143,709 111.5,636Q80,563 80,480Q80,397 111.5,324Q143,251 197,197Q251,143 324,111.5Q397,80 480,80Q563,80 636,111.5Q709,143 763,197Q817,251 848.5,324Q880,397 880,480Q880,563 848.5,636Q817,709 763,763Q709,817 636,848.5Q563,880 480,880ZM426,165Q468,235 540,277.5Q612,320 700,320Q714,320 727,318.5Q740,317 754,315Q712,245 640,202.5Q568,160 480,160Q466,160 453,161.5Q440,163 426,165ZM177,379Q228,350 266,304Q304,258 323,201Q272,230 234,276Q196,322 177,379ZM426,165Q426,165 426,165Q426,165 426,165Q426,165 426,165Q426,165 426,165Q426,165 426,165Q426,165 426,165Q426,165 426,165Q426,165 426,165ZM323,201Q323,201 323,201Q323,201 323,201Q323,201 323,201Q323,201 323,201Z"/>
++      android:pathData="M360,570Q339,570 324.5,555.5Q310,541 310,520Q310,499 324.5,484.5Q339,470 360,470Q381,470 395.5,484.5Q410,499 410,520Q410,541 395.5,555.5Q381,570 360,570ZM600,570Q579,570 564.5,555.5Q550,541 550,520Q550,499 564.5,484.5Q579,470 600,470Q621,470 635.5,484.5Q650,499 650,520Q650,541 635.5,555.5Q621,570 600,570ZM480,800Q614,800 707,707Q800,614 800,480Q800,456 797,433.5Q794,411 786,390Q765,395 744,397.5Q723,400 700,400Q609,400 528,361Q447,322 390,252Q358,330 298.5,387.5Q239,445 160,474Q160,476 160,477Q160,478 160,480Q160,614 253,707Q346,800 480,800ZM480,880Q397,880 324,848.5Q251,817 197,763Q143,709 111.5,636Q80,563 80,480Q80,397 111.5,324Q143,251 197,197Q251,143 324,111.5Q397,80 480,80Q563,80 636,111.5Q709,143 763,197Q817,251 848.5,324Q880,397 880,480Q880,563 848.5,636Q817,709 763,763Q709,817 636,848.5Q563,880 480,880ZM426,165Q468,235 540,277.5Q612,320 700,320Q714,320 727,318.5Q740,317 754,315Q712,245 640,202.5Q568,160 480,160Q466,160 453,161.5Q440,163 426,165ZM177,379Q228,350 266,304Q304,258 323,201Q272,230 234,276Q196,322 177,379Z"/>
+ </vector>
+diff --git a/res/layout/face_enroll.xml b/res/layout/face_enroll.xml
+index 55f7ac9..fbec713 100644
+--- a/res/layout/face_enroll.xml
++++ b/res/layout/face_enroll.xml
+@@ -1,63 +1,66 @@
+ <?xml version="1.0" encoding="utf-8"?>
+-<com.google.android.setupdesign.GlifLayout
++<LinearLayout
+     xmlns:android="http://schemas.android.com/apk/res/android"
+-    android:icon="@drawable/ic_lock"
+     android:id="@+id/face_enroll"
++    android:orientation="vertical"
++    android:padding="24dp"
++    android:gravity="center_horizontal"
+     android:layout_width="match_parent"
+     android:layout_height="match_parent">
+ 
++    <TextView
++        android:id="@+id/face_header_title"
++        android:layout_width="match_parent"
++        android:layout_height="wrap_content"
++        android:gravity="center"
++        android:textSize="24sp"
++        android:textStyle="bold"
++        android:layout_marginTop="16dp" />
++
++    <TextView
++        android:id="@+id/face_header_description"
++        android:layout_width="match_parent"
++        android:layout_height="wrap_content"
++        android:gravity="center"
++        android:textSize="16sp"
++        android:layout_marginTop="8dp" />
++
+     <LinearLayout
++        android:gravity="center"
+         android:orientation="vertical"
+         android:clipChildren="false"
+         android:clipToPadding="false"
+         android:layout_width="match_parent"
+-        android:layout_height="match_parent"
+-        style="@style/SudContentFrame">
++        android:layout_height="0dp"
++        android:layout_weight="1">
+ 
+         <LinearLayout
+-            android:gravity="center"
+-            android:orientation="vertical"
+-            android:clipChildren="false"
+-            android:clipToPadding="false"
++            android:id="@+id/surface_view"
+             android:layout_width="match_parent"
+-            android:layout_height="0dp"
+-            android:layout_weight="1">
++            android:layout_height="wrap_content"
++            android:gravity="center_horizontal">
++
++            <co.aospa.sense.view.CircleSurfaceView
++                android:id="@+id/camera_surface"
++                android:layout_width="240.0dip"
++                android:layout_height="320.0dip"
++                android:background="#00000000" />
++        </LinearLayout>
+ 
+-            <LinearLayout
++        <FrameLayout
++            android:layout_width="match_parent"
++            android:layout_height="wrap_content">
++            <TextView
++                android:ellipsize="end"
++                android:gravity="center"
++                android:layout_gravity="center_horizontal"
++                android:id="@+id/face_vendor_message"
+                 android:layout_width="wrap_content"
+                 android:layout_height="wrap_content"
+-                android:orientation="vertical">
+-
+-                <LinearLayout
+-                    android:id="@+id/surface_view"
+-                    android:layout_width="match_parent"
+-                    android:layout_height="wrap_content"
+-                    android:layout_marginTop="48dp"
+-                    android:gravity="center_horizontal">
+-
+-                    <co.aospa.sense.view.CircleSurfaceView
+-                        android:id="@+id/camera_surface"
+-                        android:layout_width="240.0dip"
+-                        android:layout_height="320.0dip"
+-                        android:background="#00000000" />
+-                </LinearLayout>
+-
+-                <FrameLayout
+-                    android:layout_width="match_parent"
+-                    android:layout_height="wrap_content">
+-                    <TextView
+-                        android:ellipsize="end"
+-                        android:gravity="center"
+-                        android:layout_gravity="center_horizontal"
+-                        android:id="@+id/face_vendor_message"
+-                        android:layout_width="wrap_content"
+-                        android:layout_height="wrap_content"
+-                        android:layout_marginTop="12dp"
+-                        android:lines="3"
+-                        android:accessibilityLiveRegion="polite"
+-                        style="@style/TextAppearance.FaceErrorText"/>
+-                </FrameLayout>
+-            </LinearLayout>
+-        </LinearLayout>
++                android:layout_marginTop="12dp"
++                android:lines="3"
++                android:accessibilityLiveRegion="polite"
++                style="@style/TextAppearance.FaceErrorText"/>
++        </FrameLayout>
+     </LinearLayout>
+-</com.google.android.setupdesign.GlifLayout>
++</LinearLayout>
+diff --git a/res/layout/face_enroll_try_again.xml b/res/layout/face_enroll_try_again.xml
+index e633ff4..13e82e2 100644
+--- a/res/layout/face_enroll_try_again.xml
++++ b/res/layout/face_enroll_try_again.xml
+@@ -1,26 +1,39 @@
+ <?xml version="1.0" encoding="utf-8"?>
+-<com.google.android.setupdesign.GlifLayout
++<LinearLayout
+     xmlns:android="http://schemas.android.com/apk/res/android"
+-    android:icon="@drawable/ic_lock"
+     android:id="@+id/face_enroll_try_again"
++    android:orientation="vertical"
++    android:padding="24dp"
++    android:gravity="center_horizontal"
+     android:layout_width="match_parent"
+     android:layout_height="match_parent">
+ 
+-    <LinearLayout
+-        android:orientation="vertical"
+-        android:clipChildren="false"
+-        android:clipToPadding="false"
++    <TextView
++        android:id="@+id/face_header_title"
+         android:layout_width="match_parent"
+-        android:layout_height="match_parent"
+-        style="@style/SudContentFrame">
++        android:layout_height="wrap_content"
++        android:gravity="center"
++        android:textSize="24sp"
++        android:textStyle="bold"
++        android:layout_marginTop="24dp" />
+ 
+-        <LinearLayout
+-            android:gravity="center"
+-            android:orientation="vertical"
+-            android:clipChildren="false"
+-            android:clipToPadding="false"
+-            android:layout_width="match_parent"
+-            android:layout_height="0dp"
+-            android:layout_weight="1" />
+-    </LinearLayout>
+-</com.google.android.setupdesign.GlifLayout>
++    <TextView
++        android:id="@+id/face_header_description"
++        android:layout_width="match_parent"
++        android:layout_height="wrap_content"
++        android:gravity="center"
++        android:textSize="16sp"
++        android:layout_marginTop="12dp" />
++
++    <View
++        android:layout_width="match_parent"
++        android:layout_height="0dp"
++        android:layout_weight="1" />
++
++    <Button
++        android:id="@+id/btn_try_again_action"
++        android:layout_width="wrap_content"
++        android:layout_height="wrap_content"
++        android:layout_marginBottom="24dp"
++        android:text="@string/btn_try_again" />
++</LinearLayout>
+diff --git a/res/values-night/styles.xml b/res/values-night/styles.xml
+index c9d1972..1ade0bd 100644
+--- a/res/values-night/styles.xml
++++ b/res/values-night/styles.xml
+@@ -1,12 +1,9 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <resources xmlns:android="http://schemas.android.com/apk/res/android">
+-    
+     <style name="TextAppearance.FaceErrorText" parent="@android:style/TextAppearance.Material.Body1">
+         <item name="android:textColor">?android:attr/colorError</item>
+     </style>
+ 
+     <style name="SetupWizardPartnerResource">
+-        <item name="sucUsePartnerResource">@bool/config_suc_use_partner_resource</item>
+-        <item name="sudUsePartnerHeavyTheme">true</item>
+     </style>
+ </resources>
+diff --git a/res/values/colors.xml b/res/values/colors.xml
+index bee4349..fcc6d73 100644
+--- a/res/values/colors.xml
++++ b/res/values/colors.xml
+@@ -1,36 +1,20 @@
+ <?xml version="1.0" encoding="utf-8"?>
+-<resources xmlns:android="http://schemas.android.com/apk/res/android"
+-    xmlns:androidprv="http://schemas.android.com/apk/prv/res/android">
+-
+-    <color name="theme_background">@androidprv:color/background_device_default_light</color>
+-    <color name="theme_background_dark">@androidprv:color/background_device_default_dark</color>
+-    <color name="theme_primary">@androidprv:color/primary_device_default_settings_light</color>
+-    <color name="theme_primary_dark">@androidprv:color/primary_dark_device_default_settings_light</color>
+-    <color name="theme_secondary">@androidprv:color/secondary_device_default_settings_light</color>
+-    <color name="theme_accent">@androidprv:color/accent_device_default_light</color>
+-    <color name="theme_accent_primary">@androidprv:color/accent_primary_device_default</color>
+-    <color name="theme_accent_secondary">@androidprv:color/accent_secondary_device_default</color>
+-    <color name="theme_accent_tertiary">@androidprv:color/accent_tertiary_device_default</color>
+-    <color name="theme_accent_primary_variant">@androidprv:color/accent_primary_variant_light_device_default</color>
+-    <color name="theme_accent_secondary_variant">@androidprv:color/accent_secondary_variant_light_device_default</color>
+-    <color name="theme_accent_tertiary_variant">@androidprv:color/accent_tertiary_variant_light_device_default</color>
+-    <color name="theme_dark_primary">@androidprv:color/primary_device_default_settings</color>
+-    <color name="theme_dark_primary_dark">@androidprv:color/primary_dark_device_default_settings</color>
+-    <color name="theme_dark_secondary">@androidprv:color/secondary_device_default_settings</color>
+-    <color name="theme_accent_dark">@androidprv:color/accent_device_default_dark</color>
+-    <color name="theme_accent_primary_variant_dark">@androidprv:color/accent_primary_variant_dark_device_default</color>
+-    <color name="theme_accent_secondary_variant_dark">@androidprv:color/accent_secondary_variant_dark_device_default</color>
+-    <color name="theme_accent_tertiary_variant_dark">@androidprv:color/accent_tertiary_variant_dark_device_default</color>
+-
+-    <color name="theme_accent_200">@androidprv:color/system_accent1_200</color>
+-    <color name="theme_accent_300">@androidprv:color/system_accent1_300</color>
+-    <color name="theme_accent_400">@androidprv:color/system_accent1_400</color>
+-    <color name="theme_accent_500">@androidprv:color/system_accent1_500</color>
+-    <color name="theme_accent_700">@androidprv:color/system_accent1_700</color>
+-
+-    <color name="face_enroll_vendor_color">@*android:color/system_error_light</color>
+-    <color name="face_enroll_progress_background">@*android:color/system_error_light</color>
+-
+-    <color name="app_icon_background_color">@*android:color/accent_device_default_light</color>
+-
++<resources xmlns:android="http://schemas.android.com/apk/res/android">
++    <color name="theme_background">@android:color/system_neutral1_50</color>
++    <color name="theme_background_dark">@android:color/system_neutral1_900</color>
++    <color name="theme_primary">@android:color/system_accent1_600</color>
++    <color name="theme_primary_dark">@android:color/system_accent1_700</color>
++    <color name="theme_secondary">@android:color/system_accent2_600</color>
++    <color name="theme_accent">@android:color/system_accent1_600</color>
++    <color name="theme_accent_primary">@android:color/system_accent1_600</color>
++    <color name="theme_accent_secondary">@android:color/system_accent2_600</color>
++    <color name="theme_accent_tertiary">@android:color/system_accent3_600</color>
++    <color name="theme_accent_200">@android:color/system_accent1_200</color>
++    <color name="theme_accent_300">@android:color/system_accent1_300</color>
++    <color name="theme_accent_400">@android:color/system_accent1_400</color>
++    <color name="theme_accent_500">@android:color/system_accent1_500</color>
++    <color name="theme_accent_700">@android:color/system_accent1_700</color>
++    <color name="face_enroll_vendor_color">#FFD32F2F</color>
++    <color name="face_enroll_progress_background">#FFD32F2F</color>
++    <color name="app_icon_background_color">@android:color/system_accent1_600</color>
+ </resources>
+diff --git a/res/values/strings.xml b/res/values/strings.xml
+index 8c427f5..4a0704e 100644
+--- a/res/values/strings.xml
++++ b/res/values/strings.xml
+@@ -1,6 +1,8 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <resources>
+     <string name="app_name">Face Unlock Service</string>
++    <string name="face_unlock_channel_name">Face unlock</string>
++    <string name="face_unlock_notification_title">Looking for your face</string>
+ 
+     <!-- Enroll activity -->
+     <string name="face_enroll_title">Center your face in the camera</string>
+diff --git a/res/values/styles.xml b/res/values/styles.xml
+index 6000fd6..1ade0bd 100644
+--- a/res/values/styles.xml
++++ b/res/values/styles.xml
+@@ -1,12 +1,9 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <resources xmlns:android="http://schemas.android.com/apk/res/android">
+-
+     <style name="TextAppearance.FaceErrorText" parent="@android:style/TextAppearance.Material.Body1">
+         <item name="android:textColor">?android:attr/colorError</item>
+     </style>
+ 
+     <style name="SetupWizardPartnerResource">
+-        <item name="sucUsePartnerResource">@bool/config_suc_use_partner_resource</item>
+-        <item name="sudUsePartnerHeavyTheme">true</item>
+     </style>
+ </resources>
+diff --git a/src/co/aospa/sense/SenseService.kt b/src/co/aospa/sense/SenseService.kt
+index 778bb1c..8e40932 100644
+--- a/src/co/aospa/sense/SenseService.kt
++++ b/src/co/aospa/sense/SenseService.kt
+@@ -2,18 +2,22 @@ package co.aospa.sense
+ 
+ import android.Manifest
+ import android.app.AlarmManager
++import android.app.Notification
++import android.app.NotificationChannel
++import android.app.NotificationManager
+ import android.app.PendingIntent
+ import android.app.Service
+ import android.content.BroadcastReceiver
+ import android.content.Context
+ import android.content.Intent
+ import android.content.IntentFilter
++import android.content.pm.ServiceInfo
+ import android.hardware.Camera
+ import android.hardware.biometrics.BiometricFaceConstants
+ import android.hardware.camera2.CameraManager
++import android.hardware.face.FaceManager
+ import android.os.*
+ import android.util.Log
+-import androidx.core.content.ContextCompat
+ 
+ import co.aospa.sense.controller.FaceAuthenticationController
+ import co.aospa.sense.controller.FaceEnrollController
+@@ -57,6 +61,7 @@ class SenseService : Service() {
+     private var mOnLockoutTimer = false
+     private var mUserUnlocked = false
+     private var mIsAuthenticated = false
++    private var mInForeground = false
+ 
+     private val mLockoutLock = Any()
+     private val mAuthErrorLock = Any()
+@@ -125,6 +130,7 @@ class SenseService : Service() {
+                 if (Util.IS_DEBUG_LOGGING) {
+                     Log.d(TAG, "handleData start")
+                 }
++                mVendorImpl!!.setDetectArea(0, 0, height, width)
+                 val result = mVendorImpl!!.compare(data, width, height, 0, true, true, imageData)
+                 if (Util.IS_DEBUG_LOGGING) Log.d(
+                     TAG, "handlePreviewData result = " + result +
+@@ -138,6 +144,16 @@ class SenseService : Service() {
+                     if (result == 0) {
+                         mIsAuthenticated = true
+                         mCameraAuthController!!.stop()
++                        mWorkHandler?.postDelayed({
++                            if (mIsAuthenticated) {
++                                try {
++                                    mCameraManager?.unregisterAvailabilityCallback(mCameraAvailabilityCallback)
++                                } catch (ignored: Throwable) {
++                                }
++                                mIsAuthenticated = false
++                                onAuthenticated()
++                            }
++                        }, 150)
+                     }
+                 }
+                 return result
+@@ -193,6 +209,7 @@ class SenseService : Service() {
+             angle: Int
+         ): Int {
+             val imageData = IntArray(1)
++            mVendorImpl!!.setDetectArea(0, 0, height, width)
+             val result = mVendorImpl!!.saveFeature(
+                 data,
+                 width,
+@@ -203,6 +220,9 @@ class SenseService : Service() {
+                 mImage,
+                 imageData
+             )
++            if (Util.IS_DEBUG_LOGGING) {
++                Log.d(TAG, "handleSaveFeature result = $result faceId = ${imageData[0] + 1}")
++            }
+             synchronized(this) {
+                 if (mCameraEnrollController == null) {
+                     return -1
+@@ -223,8 +243,10 @@ class SenseService : Service() {
+                         Util.setFaceUnlockAvailable(mUserContext)
+                         stopEnroll()
+                         mSenseReceiver?.onEnrollResult(faceIds, mUserId, 0)
++                        sUiEnrollmentCallback?.onEnrollmentProgress(0)
+                     } else if (result == 19) {
+                         mSenseReceiver?.onEnrollResult(faceIds, mUserId, 1)
++                        sUiEnrollmentCallback?.onEnrollmentProgress(1)
+                     }
+                 } catch (e: RemoteException) {
+                     e.printStackTrace()
+@@ -234,13 +256,16 @@ class SenseService : Service() {
+         }
+ 
+         override fun setDetectArea(size: Camera.Size?) {
+-            mVendorImpl!!.setDetectArea(0, 0, size!!.height, size.width)
++            if (size != null) {
++                mVendorImpl!!.setDetectArea(0, 0, size.height, size.width)
++            }
+         }
+ 
+         override fun onTimeout() {
+             try {
+                 stopEnroll()
+                 mSenseReceiver?.onError(BiometricFaceConstants.FACE_ERROR_TIMEOUT, 0)
++                sUiEnrollmentCallback?.onEnrollmentError(BiometricFaceConstants.FACE_ERROR_TIMEOUT, "Timeout")
+             } catch (e: RemoteException) {
+                 e.printStackTrace()
+             }
+@@ -250,24 +275,141 @@ class SenseService : Service() {
+             try {
+                 stopEnroll()
+                 mSenseReceiver?.onError(BiometricFaceConstants.FACE_ERROR_CANCELED, 0)
++                sUiEnrollmentCallback?.onEnrollmentError(BiometricFaceConstants.FACE_ERROR_CANCELED, "Camera error")
+             } catch (e: RemoteException) {
+                 e.printStackTrace()
+             }
+         }
+     }
+     private var mWorkHandler: FaceHandler? = null
+-    override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
+-        return START_REDELIVER_INTENT
++
++    /** The single binder this instance hands out; the HAL deduplicates registrations by it. */
++    private val mServiceBinder by lazy { SenseServiceWrapper(ownUserId()) }
++
++    private fun registerWithHal(userId: Int) {
++        try {
++            val halBinder = ServiceManager.getService("android.hardware.biometrics.face.IFace/default")
++            if (halBinder != null) {
++                val data = Parcel.obtain()
++                try {
++                    data.writeStrongBinder(mServiceBinder.asBinder())
++                    data.writeInt(userId)
++                    halBinder.transact(IBinder.FIRST_CALL_TRANSACTION + 100, data, null, IBinder.FLAG_ONEWAY)
++                    Log.i(TAG, "Registered SenseServiceWrapper directly with IFace HAL for user $userId")
++                } finally {
++                    data.recycle()
++                }
++            }
++        } catch (t: Throwable) {
++            Log.e(TAG, "Failed to register directly with IFace HAL", t)
++        }
++    }
++
++    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
++        sInstance = this
++        if (intent?.action == ACTION_FOREGROUND) {
++            // Started by the HAL with startForegroundService() right before it opens the camera.
++            enterForeground()
++            mWorkHandler?.postDelayed({ leaveForegroundIfIdle() }, FOREGROUND_GRACE_MS)
++        }
++        val userId = ownUserId()
++        val requestedUserId = intent?.getIntExtra(Intent.EXTRA_USER_ID, userId) ?: userId
++        if (requestedUserId != userId) {
++            Log.w(TAG, "Ignoring start for user $requestedUserId; this instance serves user $userId")
++        }
++        val halBinder = intent?.extras?.getBinder("hal_connect_binder")
++        if (halBinder != null) {
++            if (Util.IS_DEBUG_LOGGING) Log.i(TAG, "onStartCommand connecting HAL binder for user $userId")
++            val data = Parcel.obtain()
++            try {
++                data.writeStrongBinder(mServiceBinder.asBinder())
++                data.writeInt(userId)
++                halBinder.transact(IBinder.FIRST_CALL_TRANSACTION, data, null, IBinder.FLAG_ONEWAY)
++            } catch (e: Throwable) {
++                Log.e(TAG, "Failed to send SenseServiceWrapper to HAL binder", e)
++            } finally {
++                data.recycle()
++            }
++        } else {
++            registerWithHal(userId)
++        }
++        val pendingToken = sPendingEnrollToken
++        if (pendingToken != null) {
++            startLocalEnrollDirect(sPendingEnrollUserId, pendingToken, sPendingEnrollFeatures)
++        }
++        // The HAL starts this service to keep the process alive; restart it if it gets killed.
++        return START_STICKY
++    }
++
++    /**
++     * Keyguard, not this app, is in the foreground while it authenticates, so the camera may
++     * only be used from a camera foreground service. The HAL starts this service with
++     * startForegroundService() (as the system uid, which grants while-in-use camera access);
++     * the service stays in the foreground only while the camera is in use.
++     */
++    @Synchronized
++    private fun enterForeground() {
++        if (mInForeground) return
++        try {
++            startForeground(
++                NOTIFICATION_ID, buildForegroundNotification(),
++                ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
++            )
++            mInForeground = true
++        } catch (e: Exception) {
++            Log.e(TAG, "startForeground failed", e)
++        }
++    }
++
++    /**
++     * Leaves the foreground once no camera work is active. Runs on the work handler, which also
++     * creates the camera controllers, so it cannot slip in between enterForeground() and the
++     * start of the operation that requested it.
++     */
++    private fun leaveForegroundIfIdle() {
++        mWorkHandler?.post {
++            synchronized(this) {
++                if (mInForeground && mCameraAuthController == null &&
++                    mCameraEnrollController == null
++                ) {
++                    stopForeground(STOP_FOREGROUND_REMOVE)
++                    mInForeground = false
++                }
++            }
++        }
++    }
++
++    private fun buildForegroundNotification(): Notification {
++        val nm = getSystemService(NotificationManager::class.java)
++        nm.createNotificationChannel(
++            NotificationChannel(
++                NOTIFICATION_CHANNEL_ID,
++                getString(R.string.face_unlock_channel_name),
++                NotificationManager.IMPORTANCE_MIN
++            )
++        )
++        return Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
++            .setSmallIcon(R.drawable.ic_face_24px)
++            .setContentTitle(getString(R.string.face_unlock_notification_title))
++            .setCategory(Notification.CATEGORY_SERVICE)
++            .setOngoing(true)
++            .setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
++            .build()
+     }
+ 
+     override fun onBind(intent: Intent): IBinder {
+-        val userId = intent.getIntExtra(Intent.EXTRA_USER_ID, UserHandle.USER_SYSTEM)
++        val userId = ownUserId()
++        val requestedUserId = intent.getIntExtra(Intent.EXTRA_USER_ID, userId)
++        if (requestedUserId != userId) {
++            Log.w(TAG, "Bind requested for user $requestedUserId; this instance serves user $userId")
++        }
+         if (Util.IS_DEBUG_LOGGING) Log.i(TAG, "onBind for user $userId")
+-        return SenseServiceWrapper(userId)
++        return mServiceBinder
+     }
+ 
+     override fun onCreate() {
+         super.onCreate()
++        sInstance = this
+         if (Util.IS_DEBUG_LOGGING) Log.i(TAG, "onCreate")
+         mCameraManager = getSystemService(CameraManager::class.java)
+         mCameraId = CameraUtil.getCameraId(this)
+@@ -275,7 +417,13 @@ class SenseService : Service() {
+         handlerThread.start()
+         mWorkHandler = FaceHandler(handlerThread.looper)
+         mAlarmManager = getSystemService(AlarmManager::class.java)
+-        activateUser(UserHandle.USER_SYSTEM)
++        val myUserId = ownUserId()
++        activateUser(myUserId)
++        registerWithHal(myUserId)
++        val pendingToken = sPendingEnrollToken
++        if (pendingToken != null) {
++            startLocalEnrollDirect(sPendingEnrollUserId, pendingToken, sPendingEnrollFeatures)
++        }
+         val intentFilter = IntentFilter()
+         intentFilter.addAction(ALARM_TIMEOUT_FREEZED)
+         intentFilter.addAction(ALARM_FAIL_TIMEOUT_LOCKOUT)
+@@ -290,6 +438,9 @@ class SenseService : Service() {
+ 
+     override fun onDestroy() {
+         super.onDestroy()
++        if (sInstance === this) {
++            sInstance = null
++        }
+         if (Util.IS_DEBUG_LOGGING) {
+             Log.d(TAG, "onDestroy")
+         }
+@@ -297,8 +448,20 @@ class SenseService : Service() {
+         unregisterReceiver(mReceiver)
+     }
+ 
++    /**
++     * Each user runs its own instance of this service in its own process, so face data always
++     * lives in the data directory of the user it belongs to. An instance never serves another
++     * user; in headless system user mode the system user's instance has no enrollments.
++     */
++    private fun ownUserId(): Int = Util.getUserId(this)
++
+     @Synchronized
+     private fun activateUser(userId: Int) {
++        if (userId != ownUserId()) {
++            Log.w(TAG, "Refusing to switch to user $userId; this instance serves user ${ownUserId()}")
++            if (mPreferenceHelper != null) return
++            return activateUser(ownUserId())
++        }
+         if (mPreferenceHelper != null && mUserId == userId) {
+             return
+         }
+@@ -371,10 +534,13 @@ class SenseService : Service() {
+     }
+ 
+     private fun stopEnroll() {
+-        mCameraEnrollController?.stop(mCameraEnrollServiceCallback)
+-        mCameraEnrollController = null
+-        mEnrollToken = null
++        synchronized(this) {
++            mCameraEnrollController?.stop(mCameraEnrollServiceCallback)
++            mCameraEnrollController = null
++            mEnrollToken = null
++        }
+         mVendorImpl!!.saveFeatureStop()
++        leaveForegroundIfIdle()
+     }
+ 
+     private fun stopAuthentication() {
+@@ -383,6 +549,7 @@ class SenseService : Service() {
+             mCameraAuthController = null
+         }
+         mVendorImpl!!.compareStop()
++        leaveForegroundIfIdle()
+     }
+ 
+     private fun stopCurrentWork() {
+@@ -485,6 +652,64 @@ class SenseService : Service() {
+         cancelLockoutTimer()
+     }
+ 
++    @Synchronized
++    private fun startLocalEnrollDirect(
++        userId: Int,
++        cryptoToken: ByteArray,
++        disabledFeatures: IntArray?
++    ) {
++        if (userId != ownUserId()) {
++            Log.w(TAG, "Enroll requested for user $userId; enrolling for own user ${ownUserId()}")
++        }
++        activateUser(ownUserId())
++        if (mChallenge == 0L) {
++            mChallenge = Random().nextLong()
++        }
++        if (Util.isFaceUnlockDisabledByDPM(mUserContext)) {
++            Log.e(TAG, "Could not enroll: disabled by DPM")
++            return
++        }
++        synchronized(this) {
++            var hasNonZero = false
++            for (b in cryptoToken) {
++                if (b.toInt() != 0) {
++                    hasNonZero = true
++                    break
++                }
++            }
++            if (mEnrollToken == null || hasNonZero) {
++                mEnrollToken = cryptoToken.clone()
++            }
++            if (mCameraEnrollController != null) {
++                if (Util.IS_DEBUG_LOGGING) Log.d(TAG, "startLocalEnrollDirect: already enrolling, updated token if needed")
++                return
++            }
++            mCameraEnrollController = FaceEnrollController.instance
++        }
++        enterForeground()
++        resetLockoutCount()
++        mWorkHandler!!.post {
++            synchronized(this) {
++                if (mEnrollToken == null || mCameraEnrollController == null) {
++                    return@post
++                }
++            }
++            initVendor()
++            val faceId: Int = mPreferenceHelper!!.getIntValueByKey(Constants.SHARED_KEY_FACE_ID)
++            if (faceId > 0) {
++                mVendorImpl!!.deleteFeature(faceId - 1)
++                mPreferenceHelper!!.removeSharePreferences(Constants.SHARED_KEY_FACE_ID)
++                mPreferenceHelper!!.removeSharePreferences(Constants.SHARED_KEY_ENROLL_TOKEN)
++            }
++            mVendorImpl!!.saveFeatureStart()
++            synchronized(this) {
++                if (mEnrollToken != null && mCameraEnrollController != null) {
++                    mCameraEnrollController?.start(mCameraEnrollServiceCallback, 0)
++                }
++            }
++        }
++    }
++
+     private inner class SenseServiceWrapper(private val userId: Int) : ISenseService.Stub() {
+         private fun activateUser() {
+             this@SenseService.activateUser(userId)
+@@ -501,11 +726,26 @@ class SenseService : Service() {
+ 
+         override fun setCallback(faceServiceReceiver: ISenseServiceReceiver?) {
+             mSenseReceiver = faceServiceReceiver
++            sActiveReceiver = faceServiceReceiver
++            val pendingToken = sPendingEnrollToken
++            val pendingFeatures = sPendingEnrollFeatures
++            if (faceServiceReceiver != null && pendingToken != null && pendingFeatures != null) {
++                sPendingEnrollToken = null
++                sPendingEnrollFeatures = null
++                try {
++                    faceServiceReceiver.onStartPlatformEnroll(sPendingEnrollUserId, pendingToken, pendingFeatures)
++                } catch (e: RemoteException) {
++                    Log.e(TAG, "Pending onStartPlatformEnroll failed", e)
++                }
++            }
+         }
+ 
+         override fun enroll(cryptoToken: ByteArray?, timeout: Int, disabledFeatures: IntArray?) {
+             activateUser()
+             if (Util.IS_DEBUG_LOGGING) Log.d(TAG, "enroll")
++            if (mChallenge == 0L && cryptoToken != null) {
++                mChallenge = Random().nextLong()
++            }
+             if (Util.isFaceUnlockDisabledByDPM(mUserContext) || mChallenge == 0L || cryptoToken == null) {
+                 val sb = StringBuilder()
+                 sb.append("Could not enroll: ")
+@@ -520,23 +760,7 @@ class SenseService : Service() {
+                     e.printStackTrace()
+                 }
+             } else {
+-                mEnrollToken = cryptoToken
+-                val faceId: Int = mPreferenceHelper!!.getIntValueByKey(Constants.SHARED_KEY_FACE_ID)
+-                if (faceId > 0) {
+-                    mVendorImpl!!.deleteFeature(faceId - 1)
+-                    mPreferenceHelper!!.removeSharePreferences(Constants.SHARED_KEY_FACE_ID)
+-                    mPreferenceHelper!!.removeSharePreferences(Constants.SHARED_KEY_ENROLL_TOKEN)
+-                }
+-                resetLockoutCount()
+-                mWorkHandler!!.post {
+-                    mVendorImpl!!.saveFeatureStart()
+-                    synchronized(this) {
+-                        if (mCameraEnrollController == null) {
+-                            mCameraEnrollController = FaceEnrollController.instance
+-                        }
+-                        mCameraEnrollController?.start(mCameraEnrollServiceCallback, 0)
+-                    }
+-                }
++                startLocalEnrollDirect(userId, cryptoToken, disabledFeatures)
+             }
+         }
+ 
+@@ -563,8 +787,7 @@ class SenseService : Service() {
+             mCameraManager!!.registerAvailabilityCallback(mCameraAvailabilityCallback, mWorkHandler)
+             if (Util.IS_DEBUG_LOGGING) Log.d(TAG, "authenticate")
+             if (!Util.isFaceUnlockAvailable(mUserContext) ||
+-                ContextCompat.checkSelfPermission(
+-                    this@SenseService.applicationContext,
++                this@SenseService.applicationContext.checkSelfPermission(
+                     Manifest.permission.CAMERA
+                 ) != 0
+             ) {
+@@ -582,17 +805,18 @@ class SenseService : Service() {
+             } else if (mLockoutType != LOCKOUT_TYPE_DISABLED) {
+                 sendLockoutError()
+             } else {
++                enterForeground()
+                 mWorkHandler!!.post {
++                    initVendor()
+                     mVendorImpl!!.compareStart()
+-                    synchronized(this) {
+-                        if (mCameraAuthController == null) {
+-                            mCameraAuthController = FaceAuthenticationController(
+-                                this@SenseService,
+-                                mCameraAuthControllerCallback
+-                            )
+-                        } else {
++                    synchronized(this@SenseService) {
++                        if (mCameraAuthController != null) {
+                             mCameraAuthController!!.stop()
+                         }
++                        mCameraAuthController = FaceAuthenticationController(
++                            this@SenseService,
++                            mCameraAuthControllerCallback
++                        )
+                         mCameraAuthController!!.start()
+                     }
+                 }
+@@ -717,11 +941,15 @@ class SenseService : Service() {
+ 
+     companion object {
+         private const val TAG = "SenseService"
++        /** Must match the HAL (SenseFaceHalMain). */
++        private const val ACTION_FOREGROUND = "co.aospa.sense.action.FOREGROUND"
++        private const val NOTIFICATION_CHANNEL_ID = "face_unlock"
++        private const val NOTIFICATION_ID = 1
++        private const val FOREGROUND_GRACE_MS = 5000L
+         private const val ALARM_FAIL_TIMEOUT_LOCKOUT = "co.aospa.sense.ACTION_LOCKOUT_RESET"
+         private const val ALARM_TIMEOUT_FREEZED = "co.aospa.sense.freezedtimeout"
+-        private const val DEFAULT_IDLE_TIMEOUT_MS = (3600000 * 4 // 4 hours
+-                ).toLong()
+-        private const val FAIL_LOCKOUT_TIMEOUT_MS: Long = 30000 // 30 seconds
++        private const val DEFAULT_IDLE_TIMEOUT_MS = (3600000 * 4).toLong()
++        private const val FAIL_LOCKOUT_TIMEOUT_MS: Long = 30000
+         private const val MAX_FAILED_ATTEMPTS_LOCKOUT_PERMANENT = 10
+         private const val MAX_FAILED_ATTEMPTS_LOCKOUT_TIMED = 5
+         private const val MSG_CHALLENGE_TIMEOUT = 100
+@@ -729,5 +957,89 @@ class SenseService : Service() {
+         private const val LOCKOUT_TYPE_TIMED = 1
+         private const val LOCKOUT_TYPE_PERMANENT = 2
+         private const val LOCKOUT_TYPE_IDLE = 3
++
++        @Volatile
++        private var sInstance: SenseService? = null
++
++        @Volatile
++        private var sActiveReceiver: ISenseServiceReceiver? = null
++
++        @Volatile
++        private var sUiEnrollmentCallback: FaceManager.EnrollmentCallback? = null
++
++        @Volatile
++        private var sPendingEnrollUserId: Int = 0
++
++        @Volatile
++        private var sPendingEnrollToken: ByteArray? = null
++
++        @Volatile
++        private var sPendingEnrollFeatures: IntArray? = null
++
++        fun startLocalEnrollOnly(
++            userId: Int,
++            token: ByteArray,
++            callback: FaceManager.EnrollmentCallback,
++            disabledFeatures: IntArray
++        ) {
++            sUiEnrollmentCallback = callback
++            sPendingEnrollUserId = userId
++            sPendingEnrollToken = token
++            sPendingEnrollFeatures = disabledFeatures
++            sInstance?.startLocalEnrollDirect(userId, token, disabledFeatures)
++        }
++
++        fun startPlatformEnroll(
++            userId: Int,
++            token: ByteArray,
++            callback: FaceManager.EnrollmentCallback,
++            disabledFeatures: IntArray
++        ) {
++            sUiEnrollmentCallback = callback
++            sPendingEnrollUserId = userId
++            sPendingEnrollToken = token
++            sPendingEnrollFeatures = disabledFeatures
++            sInstance?.startLocalEnrollDirect(userId, token, disabledFeatures)
++            val receiver = sActiveReceiver
++            if (receiver != null && receiver.asBinder().isBinderAlive) {
++                try {
++                    receiver.onStartPlatformEnroll(userId, token, disabledFeatures)
++                    sPendingEnrollToken = null
++                    sPendingEnrollFeatures = null
++                } catch (e: RemoteException) {
++                    Log.e(TAG, "startPlatformEnroll failed, re-registering with HAL", e)
++                    sActiveReceiver = null
++                    sInstance?.registerWithHal(userId)
++                }
++            } else {
++                Log.w(TAG, "startPlatformEnroll: sActiveReceiver is null or dead, re-registering with HAL")
++                sActiveReceiver = null
++                sInstance?.registerWithHal(userId)
++            }
++        }
++
++        fun cancelPlatformEnroll() {
++            sUiEnrollmentCallback = null
++            sPendingEnrollToken = null
++            sPendingEnrollFeatures = null
++            sInstance?.let { service ->
++                synchronized(service) {
++                    service.mEnrollToken = null
++                }
++                service.mWorkHandler?.post {
++                    val shouldStop = synchronized(service) {
++                        service.mEnrollToken == null && service.mCameraEnrollController != null
++                    }
++                    if (shouldStop) {
++                        service.stopEnroll()
++                    }
++                }
++            }
++            try {
++                sActiveReceiver?.onCancelPlatformEnroll()
++            } catch (e: RemoteException) {
++                Log.e(TAG, "cancelPlatformEnroll failed", e)
++            }
++        }
+     }
+ }
+diff --git a/src/co/aospa/sense/activities/EnrollActivity.kt b/src/co/aospa/sense/activities/EnrollActivity.kt
+index 265f3f3..4b94b74 100644
+--- a/src/co/aospa/sense/activities/EnrollActivity.kt
++++ b/src/co/aospa/sense/activities/EnrollActivity.kt
+@@ -10,20 +10,17 @@ import android.media.AudioAttributes
+ import android.os.*
+ import android.text.TextUtils
+ import android.util.Log
++import android.view.View
+ import android.widget.TextView
+ import android.widget.Toast
+-import androidx.core.app.ActivityCompat
+-import androidx.core.content.ContextCompat
+ import co.aospa.sense.R
++import co.aospa.sense.SenseService
+ import co.aospa.sense.controller.FaceEnrollController
+ import co.aospa.sense.controller.FaceEnrollController.CameraCallback
+ import co.aospa.sense.util.Constants
+ import co.aospa.sense.util.PreferenceHelper
+ import co.aospa.sense.util.Util
+ import co.aospa.sense.view.CircleSurfaceView
+-import com.google.android.setupdesign.GlifLayout
+-import com.google.android.setupdesign.util.ThemeHelper
+-
+ 
+ open class EnrollActivity : FaceBaseActivity() {
+ 
+@@ -91,6 +88,7 @@ open class EnrollActivity : FaceBaseActivity() {
+                 if (!mIsActivityPaused) {
+                     val intent = Intent()
+                     intent.setClass(this@EnrollActivity, TryAgainActivity::class.java)
++                    intent.addFlags(Intent.FLAG_ACTIVITY_FORWARD_RESULT)
+                     parseIntent(intent)
+                     startActivity(intent)
+                 }
+@@ -103,6 +101,7 @@ open class EnrollActivity : FaceBaseActivity() {
+                 if (!mIsActivityPaused) {
+                     val intent = Intent()
+                     intent.setClass(this@EnrollActivity, TryAgainActivity::class.java)
++                    intent.addFlags(Intent.FLAG_ACTIVITY_FORWARD_RESULT)
+                     parseIntent(intent)
+                     startActivity(intent)
+                 }
+@@ -132,7 +131,7 @@ open class EnrollActivity : FaceBaseActivity() {
+                                 if (!enrollActivity.isDestroyed) {
+                                     startFinishActivity()
+                                 }
+-                            }, 2000)
++                            }, 500)
+                         } catch (ignored: Exception) {
+                         }
+                     }
+@@ -165,18 +164,12 @@ open class EnrollActivity : FaceBaseActivity() {
+     override fun onCreate(bundle: Bundle?) {
+         super.onCreate(bundle)
+ 
+-        setTheme(ThemeHelper.getSuwDefaultTheme(applicationContext))
+-        ThemeHelper.trySetDynamicColor(this)
+-
+         mPreferenceHelper = PreferenceHelper(this)
+         mHasCameraPermission = false
+         mFaceManager = getSystemService(FaceManager::class.java)
+-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != 0) {
++        if (checkSelfPermission(Manifest.permission.CAMERA) != 0) {
+             val shouldShowRequestPermissionRationale =
+-                ActivityCompat.shouldShowRequestPermissionRationale(
+-                    this,
+-                    Manifest.permission.CAMERA
+-                )
++                shouldShowRequestPermissionRationale(Manifest.permission.CAMERA)
+             if (Util.IS_DEBUG_LOGGING) Log.i(
+                 TAG,
+                 "shouldShowRequestPermissionRationale: $shouldShowRequestPermissionRationale"
+@@ -198,28 +191,29 @@ open class EnrollActivity : FaceBaseActivity() {
+     private fun init() {
+         setContentView(R.layout.face_enroll)
+         setHeaderText(R.string.face_enroll_title)
+-        getLayout().setDescriptionText(R.string.face_enroll_description)
++        setDescriptionText(R.string.face_enroll_description)
+         mSurfaceView = findViewById(R.id.camera_surface)
+         mProgress = 0.0f
+         mSurfaceView?.setProgress(0.0f)
+         mEnrollVendorMessage = findViewById(R.id.face_vendor_message)
+-        /**mSurfaceView.postDelayed(new Runnable() {
+-         * @Override
+-         * public void run() {
+-         * if (mIsFaceDetected) {
+-         * mProgress += 5.0f;
+-         * }
+-         * if (mProgress < 60.0f) {
+-         * mSurfaceView.setProgress(mProgress);
+-         * mSurfaceView.postDelayed(this, 500);
+-         * }
+-         * }
+-         * }, 500); */
+         if (mEnrollController == null) {
+             mEnrollController = FaceEnrollController.instance
+             mEnrollController?.setSurfaceHolder(mSurfaceView?.holder)
+         }
+-        if (mToken != null && mToken!!.isNotEmpty()) {
++        try {
++            startService(Intent(this, SenseService::class.java).putExtra(Intent.EXTRA_USER_ID, mUserId))
++        } catch (ignored: Throwable) {
++        }
++        if (mToken == null || mToken!!.isEmpty()) {
++            mToken = ByteArray(69)
++        }
++        try {
++            SenseService.startLocalEnrollOnly(
++                mUserId,
++                mToken!!,
++                mEnrollmentCallback,
++                intArrayOf(1)
++            )
+             mFaceManager!!.enroll(
+                 mUserId,
+                 mToken,
+@@ -227,18 +221,24 @@ open class EnrollActivity : FaceBaseActivity() {
+                 mEnrollmentCallback,
+                 intArrayOf(1)
+             )
++        } catch (se: SecurityException) {
++            Log.i(TAG, "Delegating FaceManager.enroll via SenseService HAL bridge")
++            SenseService.startPlatformEnroll(
++                mUserId,
++                mToken!!,
++                mEnrollmentCallback,
++                intArrayOf(1)
++            )
+         }
+         if (mUserId != Util.getUserId(this)) {
+-            // The enroll request is served by the target user's service, which owns the camera.
+-            // Do not open a second capture session from this process.
+             return
+         }
+         mEnrollController!!.start(mCameraCallback, 15000)
+     }
+ 
+-    override fun getLayout(): GlifLayout {
++    override fun getLayout(): View {
+         return findViewById(R.id.face_enroll)
+-            ?: throw IllegalStateException("Missing required GlifLayout view with id 'face_enroll'")
++            ?: throw IllegalStateException("Missing required view with id 'face_enroll'")
+     }
+ 
+     override fun onDestroy() {
+@@ -261,6 +261,7 @@ open class EnrollActivity : FaceBaseActivity() {
+             mEnrollController = null
+         }
+         mEnrollmentCancel.cancel()
++        SenseService.cancelPlatformEnroll()
+     }
+ 
+     override fun onResume() {
+@@ -277,18 +278,16 @@ open class EnrollActivity : FaceBaseActivity() {
+     }
+ 
+     private fun startFinishActivity() {
+-        val intent = Intent()
++        Log.i(TAG, "Finishing EnrollActivity with RESULT_FINISHED=1")
++        val resultIntent = Intent()
+         if (mToken != null) {
+-            intent.putExtra(Constants.EXTRA_KEY_CHALLENGE_TOKEN, mToken)
++            resultIntent.putExtra(Constants.EXTRA_KEY_CHALLENGE_TOKEN, mToken)
+         }
+         if (mUserId != UserHandle.USER_NULL) {
+-            intent.putExtra(Intent.EXTRA_USER_ID, mUserId)
++            resultIntent.putExtra(Intent.EXTRA_USER_ID, mUserId)
+         }
+-        val enrollFinish = ComponentName.unflattenFromString(
+-            "com.android.settings/com.android.settings.biometrics.face.FaceEnrollFinish"
+-        )
+-        intent.component = enrollFinish
+-        startActivityForResult(intent, 1)
++        setResult(1, resultIntent)
++        finish()
+     }
+ 
+     override fun onBackPressed() {
+@@ -303,7 +302,7 @@ open class EnrollActivity : FaceBaseActivity() {
+             setResult(resultCode)
+             finish()
+         } else if (requestCode == 2) {
+-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != 0) {
++            if (checkSelfPermission(Manifest.permission.CAMERA) != 0) {
+                 if (Util.IS_DEBUG_LOGGING) Log.i(TAG, "REQUEST_CAMERA finish")
+                 finish()
+                 return
+@@ -323,11 +322,7 @@ open class EnrollActivity : FaceBaseActivity() {
+         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+         if (requestCode == 0) {
+             synchronized(this) { mHasCameraPermission = true }
+-        } else if (!ActivityCompat.shouldShowRequestPermissionRationale(
+-                this,
+-                Manifest.permission.CAMERA
+-            )
+-        ) {
++        } else if (!shouldShowRequestPermissionRationale(Manifest.permission.CAMERA)) {
+             Toast.makeText(this@EnrollActivity, "Missing camera permission", Toast.LENGTH_SHORT)
+                 .show()
+         } else {
+diff --git a/src/co/aospa/sense/activities/FaceBaseActivity.kt b/src/co/aospa/sense/activities/FaceBaseActivity.kt
+index 48bf6a4..052b21a 100644
+--- a/src/co/aospa/sense/activities/FaceBaseActivity.kt
++++ b/src/co/aospa/sense/activities/FaceBaseActivity.kt
+@@ -1,16 +1,16 @@
+ package co.aospa.sense.activities
+ 
++import android.app.Activity
+ import android.content.Intent
+ import android.os.Bundle
+ import android.text.TextUtils
++import android.view.View
+ import android.widget.TextView
+-import androidx.appcompat.app.AppCompatActivity
+ import co.aospa.sense.R
+ import co.aospa.sense.util.Constants
+-import com.google.android.setupdesign.GlifLayout
+-import com.google.android.setupdesign.util.ThemeHelper
++import co.aospa.sense.util.Util
+ 
+-abstract class FaceBaseActivity : AppCompatActivity() {
++abstract class FaceBaseActivity : Activity() {
+ 
+     private var mLaunchedConfirmLock = false
+     @JvmField
+@@ -19,12 +19,9 @@ abstract class FaceBaseActivity : AppCompatActivity() {
+ 
+     override fun onCreate(bundle: Bundle?) {
+         super.onCreate(bundle)
+-
+-        setTheme(ThemeHelper.getSuwDefaultTheme(applicationContext))
+-        ThemeHelper.trySetDynamicColor(this)
+-
++        actionBar?.hide()
+         mToken = intent.getByteArrayExtra(Constants.EXTRA_KEY_CHALLENGE_TOKEN)
+-        mUserId = intent.getIntExtra(Intent.EXTRA_USER_ID, 0)
++        mUserId = intent.getIntExtra(Intent.EXTRA_USER_ID, Util.getUserId(this))
+         if (bundle != null && mToken == null) {
+             mLaunchedConfirmLock = bundle.getBoolean(Constants.EXTRA_KEY_LAUNCHED_CONFIRM)
+             mToken = bundle.getByteArray(Constants.EXTRA_KEY_CHALLENGE_TOKEN)
+@@ -43,19 +40,23 @@ abstract class FaceBaseActivity : AppCompatActivity() {
+         intent.putExtra(Intent.EXTRA_USER_ID, mUserId)
+     }
+ 
+-    abstract fun getLayout(): GlifLayout
++    abstract fun getLayout(): View
+ 
+     open fun setHeaderText(res: Int) {
+-        val header: TextView = getLayout().headerTextView
++        val header = findViewById<TextView>(R.id.face_header_title) ?: return
+         val previous: CharSequence = header.text
+         val current = getText(res)
+         if (previous !== current) {
+             if (!TextUtils.isEmpty(current)) {
+                 header.accessibilityLiveRegion = 1
+             }
+-            getLayout().headerText = current
++            header.text = current
+             title = current
+         }
+     }
+ 
++    open fun setDescriptionText(res: Int) {
++        val desc = findViewById<TextView>(R.id.face_header_description) ?: return
++        desc.setText(res)
++    }
+ }
+diff --git a/src/co/aospa/sense/activities/TryAgainActivity.kt b/src/co/aospa/sense/activities/TryAgainActivity.kt
+index 65c6709..e79c049 100644
+--- a/src/co/aospa/sense/activities/TryAgainActivity.kt
++++ b/src/co/aospa/sense/activities/TryAgainActivity.kt
+@@ -4,35 +4,21 @@ import android.content.Intent
+ import android.content.res.Resources
+ import android.os.Bundle
+ import android.view.View
++import android.widget.Button
+ import co.aospa.sense.R
+-import com.google.android.setupcompat.template.FooterBarMixin
+-import com.google.android.setupcompat.template.FooterButton
+-import com.google.android.setupdesign.GlifLayout
+-import com.google.android.setupdesign.util.ThemeHelper
+-
+ 
+ class TryAgainActivity : FaceBaseActivity() {
+ 
+     override fun onCreate(bundle: Bundle?) {
+         super.onCreate(bundle)
+-
+-        setTheme(ThemeHelper.getSuwDefaultTheme(applicationContext))
+-        ThemeHelper.trySetDynamicColor(this)
+-
+         setContentView(R.layout.face_enroll_try_again)
+         setHeaderText(R.string.face_try_again_title)
+-        getLayout().setDescriptionText(R.string.face_try_again_description)
+-
+-        val footerBarMixin = getLayout().getMixin(FooterBarMixin::class.java) as FooterBarMixin
+-        footerBarMixin.primaryButton =
+-            FooterButton.Builder(this)
+-                .setText(R.string.btn_try_again)
+-                .setListener { setTryAgainButton() }
+-                .setButtonType(FooterButton.ButtonType.OTHER)
+-                .setTheme(com.google.android.setupdesign.R.style.SudGlifButton_Primary)
+-                .build()
++        setDescriptionText(R.string.face_try_again_description)
++
++        val btn = findViewById<Button>(R.id.btn_try_again_action)
++        btn?.setOnClickListener { setTryAgainButton() }
+         if (mToken == null) {
+-            footerBarMixin.primaryButton.visibility = View.INVISIBLE
++            btn?.visibility = View.INVISIBLE
+         }
+     }
+ 
+@@ -41,9 +27,9 @@ class TryAgainActivity : FaceBaseActivity() {
+         super.onApplyThemeResource(theme, resid, first)
+     }
+ 
+-    override fun getLayout(): GlifLayout {
++    override fun getLayout(): View {
+         return findViewById(R.id.face_enroll_try_again)
+-            ?: throw IllegalStateException("Missing required GlifLayout view with id 'face_enroll_try_again'")
++            ?: throw IllegalStateException("Missing required view with id 'face_enroll_try_again'")
+     }
+ 
+     override fun onPause() {
+@@ -54,9 +40,9 @@ class TryAgainActivity : FaceBaseActivity() {
+     private fun setTryAgainButton() {
+         val intent = Intent()
+         intent.setClass(this@TryAgainActivity, EnrollActivity::class.java)
++        intent.addFlags(Intent.FLAG_ACTIVITY_FORWARD_RESULT)
+         parseIntent(intent)
+         startActivity(intent)
+         finish()
+     }
+-
+ }
+diff --git a/src/co/aospa/sense/controller/FaceAuthenticationController.kt b/src/co/aospa/sense/controller/FaceAuthenticationController.kt
+index 35d5266..0bab21f 100644
+--- a/src/co/aospa/sense/controller/FaceAuthenticationController.kt
++++ b/src/co/aospa/sense/controller/FaceAuthenticationController.kt
+@@ -111,10 +111,13 @@ open class FaceAuthenticationController(
+             mFrame = null
+             mCameraState = CameraState.CAMERA_PREVIEW_STOPPING
+             CameraService.stopPreview(null)
++            CameraService.setPreviewCallback(null, false, null)
+             CameraService.closeCamera(null)
+         } else if (mCameraState != CameraState.CAMERA_IDLE) {
++            CameraService.setPreviewCallback(null, false, null)
+             CameraService.closeCamera(null)
+         }
++        mCameraState = CameraState.CAMERA_IDLE
+         mCallback = null
+         mStop = true
+         if (!mCompareSuccess) {
+diff --git a/src/co/aospa/sense/controller/FaceEnrollController.kt b/src/co/aospa/sense/controller/FaceEnrollController.kt
+index 46664a2..b5b3f51 100644
+--- a/src/co/aospa/sense/controller/FaceEnrollController.kt
++++ b/src/co/aospa/sense/controller/FaceEnrollController.kt
+@@ -126,6 +126,8 @@ open class FaceEnrollController private constructor(private val mContext: Contex
+                     mHandler.sendEmptyMessage(MSG_CAMERA_UPDATE_STATE)
+                 }
+                 mHandling = false
++            } else if (mPreviewSize != null) {
++                mFaceUnlockHandler?.sendEmptyMessage(MSG_FACE_UNLOCK_DETECT_AREA)
+             }
+         }
+         if (i > 0) {
+@@ -204,6 +206,7 @@ open class FaceEnrollController private constructor(private val mContext: Contex
+                         mFrame = ByteBuffer.allocateDirect(getPreviewBufferSize(width, height))
+                         CameraService.writeParameters(mCameraListener)
+                         Log.d(TAG, "preview size " + mPreviewSize!!.height + " " + mPreviewSize!!.width)
++                        mFaceUnlockHandler?.sendEmptyMessage(MSG_FACE_UNLOCK_DETECT_AREA)
+                     }
+                     3 -> {
+                         mCameraState = CameraState.CAMERA_PREVIEW_STARTED
+@@ -357,8 +360,13 @@ open class FaceEnrollController private constructor(private val mContext: Contex
+                         }
+                     }
+                 } else if (i == MSG_FACE_UNLOCK_DETECT_AREA) {
+-                    for (mCameraCallback in mCameraCallbacks) {
+-                        mCameraCallback.setDetectArea(mPreviewSize)
++                    synchronized(mCameraCallbacks) {
++                        val size = mPreviewSize
++                        if (size != null) {
++                            for (mCameraCallback in mCameraCallbacks) {
++                                mCameraCallback.setDetectArea(size)
++                            }
++                        }
+                     }
+                 }
+             }
+diff --git a/src/co/aospa/sense/util/PreferenceHelper.kt b/src/co/aospa/sense/util/PreferenceHelper.kt
+index dfdb3c5..a9f0144 100644
+--- a/src/co/aospa/sense/util/PreferenceHelper.kt
++++ b/src/co/aospa/sense/util/PreferenceHelper.kt
+@@ -51,8 +51,9 @@ class PreferenceHelper(context: Context) {
+ 
+     @SuppressLint("ApplySharedPref")
+     fun saveByteArrayValue(key: String?, value: ByteArray?) {
++        if (value == null) return
+         val edit = PreferenceManager.getDefaultSharedPreferences(mContext).edit()
+-        edit.putString(key, String(value!!))
++        edit.putString(key, String(value, Charsets.ISO_8859_1))
+         edit.commit()
+     }
+ 
+@@ -60,7 +61,7 @@ class PreferenceHelper(context: Context) {
+         val string = PreferenceManager.getDefaultSharedPreferences(mContext).getString(key, null)
+         return if (TextUtils.isEmpty(string)) {
+             null
+-        } else string!!.toByteArray()
++        } else string!!.toByteArray(Charsets.ISO_8859_1)
+     }
+ 
+     fun getBooleanValueByKey(key: String?): Boolean {
+diff --git a/src/co/aospa/sense/util/SenseUserContext.kt b/src/co/aospa/sense/util/SenseUserContext.kt
+index 2b30a34..d91e5f5 100644
+--- a/src/co/aospa/sense/util/SenseUserContext.kt
++++ b/src/co/aospa/sense/util/SenseUserContext.kt
+@@ -7,7 +7,7 @@ import android.os.UserHandle
+ import java.io.File
+ 
+ class SenseUserContext(base: Context, private val userId: Int) :
+-    ContextWrapper(base.createContextAsUser(UserHandle.of(userId), 0)) {
++    ContextWrapper(createSafeUserContext(base, userId)) {
+ 
+     private val storageContext = base.applicationContext
+ 
+@@ -20,5 +20,15 @@ class SenseUserContext(base: Context, private val userId: Int) :
+         storageContext.getSharedPreferences(userName(name), mode)
+ 
+     private fun userName(name: String): String =
+-        if (userId == UserHandle.USER_SYSTEM) name else "${name}_$userId"
++        if (userId == UserHandle.USER_SYSTEM || userId == Util.getUserId(storageContext)) name else "${name}_$userId"
++
++    companion object {
++        private fun createSafeUserContext(base: Context, userId: Int): Context {
++            return try {
++                base.createContextAsUser(UserHandle.of(userId), 0)
++            } catch (_: Throwable) {
++                base
++            }
++        }
++    }
+ }

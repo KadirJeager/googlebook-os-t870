@@ -1,0 +1,17 @@
+;; Rules mica's vendor policy gives platform domains towards platform types, needed by the
+;; Googlebook system side itself (the rest of those vendor rules serve mica-only vendor daemons
+;; such as snapshot_collector, which the tablet does not have).
+;; Googlebook's USB4/Type-C policy thread in system_server stats .../typec/port*/uevent.
+(allow system_server sysfs (file (getattr)))
+;; vendor.google.desktop.serviceability (/product/priv-app, sharedUserId=android.uid.system) runs
+;; as system_app here (mica's vendor_seapp_contexts puts it in a vendor domain serviceability);
+;; port the procfs/sysfs read rules of device/google/desktop/common/sepolicy/serviceability.te so
+;; Diagnostics (CPU, battery, memory, storage, thermal, audio) does not fail with AccessDeniedException.
+(allow system_app proc_stat (file (ioctl read getattr lock map open watch watch_reads)))
+(allow system_app proc_vmstat (file (ioctl read getattr lock map open watch watch_reads)))
+(allow system_app proc_asound (dir (ioctl read getattr lock open watch watch_reads search)))
+(allow system_app proc_asound (file (ioctl read getattr lock map open watch watch_reads)))
+(allow system_app proc_asound (lnk_file (ioctl read getattr lock map open watch watch_reads)))
+(allow system_app sysfs_type (dir (ioctl read getattr lock open watch watch_reads search)))
+(allow system_app sysfs_type (file (ioctl read getattr lock map open watch watch_reads)))
+(allow system_app sysfs_type (lnk_file (ioctl read getattr lock map open watch watch_reads)))

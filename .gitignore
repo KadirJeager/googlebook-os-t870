@@ -1,0 +1,49 @@
+# Googlebook OS T870 tools: source, patches, tests, notes and small evidence are tracked.
+# Images, firmware, backups, downloaded inputs and build outputs are not: they are large,
+# reproducible from the tools, or device-specific backups (see DEVIR.md for where each lives).
+LineageOS-24.0-gts7lwifi/
+mica-imaj/guncel/
+pixel-imaj/
+yedek-*/
+google-sistem/**/*.apk
+yuz-tanima/FaceUnlock/
+__pycache__/
+*.pyc
+out/
+build/
+.gradle/
+*.exe
+*.img
+*.erofs
+*.zip
+*.apk
+*.apex
+*.tar*
+*.zst
+*.lz4
+*.bin
+*.so
+*.dex
+*.jar
+*.pftrace
+*.perfetto-trace
+*.mp4
+*.webm
+*.capex
+yuz-tanima/tools/
+samloader-rs-*/samloader
+# camera and screen evidence shows the user's home and face; kept on disk, not in history
+**/kanit/**/*.jpg
+**/kanit/**/*.png
+acilis-loglari/**/*.jpg
+acilis-loglari/**/*.png
+
+# kernel: tabletten çekilmiş bölüm yedekleri ve derleme çıktıları (kernel/BENIOKU.md)
+kernel/yedek/
+kernel/cikti/
+# This checkout's own tablet and inputs: the header recorded by super-baslik/uret.py yakala, the
+# downloaded release's link and log (the author's are tracked from before; new ones stay local)
+super-baslik/lineage.bin.xz
+super-baslik/SHA256SUMS
+mica-imaj/guncel
+mica-imaj/*/indir.log

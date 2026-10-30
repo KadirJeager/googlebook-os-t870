@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Googlebook OS updater app (T870-araclar/guncelleyici): privileged permissions it requests. -->
+<permissions>
+    <privapp-permissions package="com.gbos.guncelleyici">
+        <!-- removes the leftover Play updates of system apps the image no longer ships -->
+        <permission name="android.permission.DELETE_PACKAGES" />
+    </privapp-permissions>
+</permissions>

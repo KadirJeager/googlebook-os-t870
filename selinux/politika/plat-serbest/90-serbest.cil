@@ -1,0 +1,4 @@
+;; Only in permissive mode (yamalar/selinux.py, GBOS_SELINUX_KIP=permissive): init runs
+;; "write /sys/fs/selinux/enforce 0" from system/etc/init/gbos-selinux.rc in early-init.
+(allow init kernel (security (setenforce)))
+(allow init selinuxfs (file (write)))

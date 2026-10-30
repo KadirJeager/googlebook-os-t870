@@ -1,0 +1,8 @@
+;; sysfs_ion for the 4.19 kernel's /sys/kernel/ion and the LineageOS soter HAL's memfd sharing
+;; with platform apps (LineageOS system_ext rules).
+(genfscon sysfs "/kernel/ion" (u object_r sysfs_ion ((s0) (s0))))
+(typeattributeset vendor_hal_soter_client (platform_app platform_app_36 ))
+(allow platform_app vendor_hal_soter (memfd_file (read write getattr map)))
+(allow vendor_hal_soter platform_app (memfd_file (read write getattr map)))
+(allow platform_app_36 vendor_hal_soter (memfd_file (read write getattr map)))
+(allow vendor_hal_soter platform_app_36 (memfd_file (read write getattr map)))

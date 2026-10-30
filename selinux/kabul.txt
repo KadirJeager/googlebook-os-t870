@@ -1,0 +1,142 @@
+# Decisions on refusals that stay refused on purpose (yamalar/selinux.py dogrula):
+#  - "MICA IZIN VERIYOR" / "LINEAGE IZIN VERIYOR(DU)" findings are errors unless accepted here;
+#  - denials that mica and LineageOS refuse too are listed as INCELENMEDI until they get a line here.
+# "stype ttype class permission  # reason": shell patterns allowed, the reason is required.
+
+# --- LineageOS system_ext components that the Googlebook image does not have ---
+# QSPM runs from LineageOS's system_ext (/system_ext/bin); its rules came with that policy.
+vendor_qspmsvc * * *  # LineageOS system_ext daemon, not on the Googlebook image
+vndservicemanager vendor_qspmsvc binder *  # same daemon, as a vndbinder client
+# LineageOS's framework services (LineageParts, lineage-sdk) are the clients of these HALs.
+hal_lineage_* * * *  # LineageOS HALs calling back the LineageOS framework, which Googlebook lacks
+
+# --- HAL client roles that LineageOS's QTI system_ext policy gives system-side domains ---
+# LineageOS's system_ext puts QTI system apps/daemons and some app domains into QTI and AOSP HAL
+# client attributes (QCC, Wi-Fi display, voice UI, QESDK/DSP SDK, QTI location, IMS, perf); the
+# HAL server -> client callbacks below follow from that. Googlebook does not use these clients;
+# mica's own policy gives them no such roles either.
+* vendor_qcc_lmtp_app * *  # QTI QCC app as client of every HAL (LineageOS system_ext)
+* vendor_wfd_app * *  # QTI Wi-Fi display app as composer client
+* vendor_voiceui_app * *  # QTI voice UI app as audio HAL client
+* vendor_sigmahal_qti * *  # QTI sigma HAL as allocator client
+* vendor_perfservice * *  # QTI perf service as thermal HAL client
+* vendor_imsvtdaemon * *  # QTI IMS VT daemon (no telephony on the Wi-Fi tablet)
+* vendor_qtelephony * *  # QTI telephony (no telephony on the Wi-Fi tablet)
+* untrusted_app_34 * *  # QTI DSP/QESDK/QSPM SDK client role of apps
+* platform_app_36 * *  # QTI DSP/perf SDK client role of apps
+* priv_app_36 * *  # QTI QESDK client role of apps
+hal_gnss_default platform_app * *  # QTI location platform app as GNSS client
+vendor_hal_gnss_qti platform_app * *  # QTI location platform app as GNSS client
+vendor_hal_qesdhal_default system_server * *  # LineageOS framework as QESDK client
+vendor_wifimyftmsvc system_app * *  # QTI Wi-Fi FTM test client (system_app)
+
+# --- Denials of the recorded boots that mica's and LineageOS's own policies refuse as well ---
+# Decision for each: no rule. The behaviour equals both reference platforms and nothing breaks.
+# Lookups of services no image provides (mica's vendor does not label them either, LineageOS's
+# vendor has no Idiag): servicemanager answers "not found"; the callers retry harmlessly.
+platform_app default_android_service service_manager find  # IWirelessCharger: no wireless charging on mica nor the tablet
+system_app default_android_service service_manager find  # same IWirelessCharger lookup from the Dell serviceability app
+qtidiagservices_app default_android_service service_manager find  # LineageOS QTI diag app asks for vendor.qti.diaghal.Idiag, absent on LineageOS too
+qtidiagservices_app statsd_atoms_list_file file *  # same LineageOS QTI diag app, denied on LineageOS too
+# Property areas outside a domain's reach: bionic returns "not set". ro.hardware.* without an
+# exact entry is vendor_default_prop on all three platforms; app domains enumerating every area
+# (getprop-style scans in WebView/Linux terminal/GMS) touch areas they never read from.
+system_server vendor_default_prop file *  # ro.hardware.* etc. are vendor-private on mica and LineageOS alike
+priv_app vendor_default_prop file *  # same, GMS/Chrome probing ro.hardware.chipname
+isolated_app vendor_default_prop file *  # same, renderer processes
+isolated_compute_app vendor_default_prop file *  # same
+untrusted_app vendor_default_prop file *  # same
+untrusted_app aac_drc_prop file *  # property area scan by an app
+untrusted_app ab_update_gki_prop file *  # property area scan by an app
+untrusted_app adaptive_haptics_prop file *  # property area scan by an app
+untrusted_app_34 safemode_prop file *  # property area scan by an app
+untrusted_app_34 sec_camera_prop file *  # Samsung camera property, apps may not read it on LineageOS either
+vmlauncher_app *_prop file *  # Linux terminal VM launcher scanning property areas
+vendor_hal_neuralnetworks_default default_prop file read  # LineageOS NN HAL reads an unlisted property; LineageOS refuses it the same way
+shell bpf_progs_loaded_prop file read  # unprivileged adb shell; adb root (su) is permissive
+# Unprivileged adb shell (not root) inspecting sockets and services; adb root is the debug path.
+shell * sock_file getattr  # ls -Z / stat on /dev/socket by an unprivileged adb shell
+shell * dir getattr  # same, socket directories
+shell * service_manager find  # dumpsys/cmd as unprivileged shell on services shell may not reach
+shell * binder call  # same, calls into HALs and daemons
+# App-side probes the platforms refuse: app falls back silently.
+untrusted_app mnt_sdcard_file lnk_file read  # legacy /sdcard symlink read by an app
+untrusted_app proc_vmstat file open  # /proc/vmstat, hidden from apps since Android 10
+untrusted_app proc_zoneinfo file *  # /proc/zoneinfo, hidden from apps
+untrusted_app system_lib_file file execmod  # old app with text relocations in a system library
+priv_app proc_stat file *  # /proc/stat, hidden from apps
+priv_app_36 proc_stat file *  # same
+priv_app device dir open  # listing /dev
+priv_app metadata_file dir *  # listing /metadata
+gmscore_app cgroup_v2 dir search  # GMS probing cgroups
+platform_app system_data_file dir search  # platform app walking /data
+bluetooth privapp_data_file dir *  # Bluetooth opening a GMS data path of another user (MLS); refused on both
+snapshotservice snapshotservice_data_file file *  # ART writing an app image for a not yet compiled app; ART falls back to JIT
+vendor_systemhelper_app system_app_data_file * *  # same ART cache case for the LineageOS QTI system helper (HSUM user 10)
+# Daemons trying optional work the kernel or the platform does not offer them.
+mmd_setup mmd_setup capability sys_nice  # mmd raising a kernel thread's priority; AOSP's mmd_setup policy refuses it
+mmd_setup kernel process setsched  # same
+netd proc_net * *  # xt_quota2 /proc/net/xt_quota/globalAlert of the 4.19 kernel; bandwidth alerts use BPF
+crash_dump bpfloader process ptrace  # crash_dump attaching to bpfloader; refused on both
+e2fs e2fs capability kill  # e2fsprogs signalling itself
+vold dqmdbg_file dir read  # Samsung /dqmdbg mount point
+init vendor_file file mounton  # obsolete bind mount over /vendor/lib (replaced by gbos-vendor-override)
+init same_process_hal_file file mounton  # same
+vendor_init-qti-dcvs-sh vendor_sysfs_devfreq * *  # LineageOS QTI DCVS script creating sysfs nodes this kernel lacks
+vendor_qti_init_shell vendor_sysfs_msm_power * *  # LineageOS QTI init script, same
+vendor_ssgtzd vendor_data_file dir *  # LineageOS QWES daemon chmod on /data/vendor; LineageOS refuses it the same way
+vendor_sensors device chr_file read  # LineageOS sensors daemon opening an unlabelled /dev node; LineageOS refuses it too
+# Seen in the 2026-10-22 02:33 enforcing boot (device test, selinux/kanit/20261022-0233-*).
+dex2oat system_data_file dir search  # dex2oat walking /data/user/<N> with that user's MLS categories; artd hands it fds, the walk fails harmlessly on both platforms
+priv_app_36 sysfs_net file read  # Dell SupportAssist reading /sys/class/net/*/{address,mtu}; MAC addresses are hidden from apps on both
+gmscore_app efs_file dir getattr  # GMS integrity probe stat-ing a system directory
+gmscore_app linkerconfig_file dir getattr  # GMS integrity probe stat-ing a system directory
+gmscore_app metadata_file dir getattr  # GMS integrity probe stat-ing a system directory
+gmscore_app mirror_data_file dir getattr  # GMS integrity probe stat-ing a system directory
+gmscore_app postinstall_mnt_dir dir getattr  # GMS integrity probe stat-ing a system directory
+gmscore_app system_dlkm_file dir getattr  # GMS integrity probe stat-ing a system directory
+gmscore_app configfs dir read  # same probe
+gmscore_app init_exec lnk_file getattr  # same probe, /init
+untrusted_app_34 build_bootimage_prop file *  # app root/emulator detection probe; refused on both platforms
+untrusted_app_34 qemu_hw_prop file *  # app root/emulator detection probe; refused on both platforms
+untrusted_app_34 crosvm_exec file *  # app root/emulator detection probe; refused on both platforms
+untrusted_app_34 linkerconfig_exec file *  # app root/emulator detection probe; refused on both platforms
+untrusted_app_34 art_boot_exec file *  # app root/emulator detection probe; refused on both platforms
+untrusted_app_34 proc_net file *  # app root/emulator detection probe; refused on both platforms
+untrusted_app_34 proc_net_tcp_udp file *  # app root/emulator detection probe; refused on both platforms
+untrusted_app_34 selinuxfs file *  # app root/emulator detection probe; refused on both platforms
+untrusted_app_34 proc_asound dir *  # app root/emulator detection probe; refused on both platforms
+untrusted_app_34 rootfs dir *  # app root/emulator detection probe; refused on both platforms
+# Older images labelled /system/etc/ld.config.32 system_file (only file these denials name); the
+# image builder labels it system_linker_config_file since 2026-10-22, which these domains may read.
+hal_audio_default system_file file getattr  # ld.config.32 on images before the builder fix
+hal_cas_default system_file file getattr  # same
+mediacodec system_file file getattr  # same
+vendor_hal_drm_widevine system_file file getattr  # same
+# --- Vendor domains: the tablet's vendor policy is LineageOS's ---
+# The camera provider asks system_suspend for a wakelock; mica's own camera HAL may, LineageOS's
+# policy for this vendor refuses it too and the camera works there (selinux/kanit/*-codec2,
+# acilis-loglari/codec2-20261022, 22 Oct 2026).
+hal_camera_default system_suspend binder call  # LineageOS 24 refuses it as well; same vendor HAL
+# --- Test-only access (22 Oct 2026) ---
+mediaprovider_app shell_data_file dir *  # media scan reaching /data/local/tmp while adb tests used it; mica and LineageOS refuse too
+# Terminal emulator runs (selinux/kanit/terminal-emulator-20261022.txt), not product paths:
+gbos_linuxd gbos_linux_socket unix_stream_socket *  # older design labelled the socket object gbos_linux_socket; init now creates it in gbos_linuxd (60-gbos-linux.cil)
+gbos_linuxd shell_data_file file write  # a test bind writing its log to /data/local/tmp
+toolbox gbos_linux_data_file * *  # an `ls` init runs in the toolbox domain at every boot, before zygote (pid ~430, 1 s before boot_progress_start; source rc not yet found); metadata only, no function needs it
+
+# --- 22-23 Oct 2026 acceptance runs (cihaz-kabul/kanit/*/avc-ham.txt): both mica and LineageOS refuse these too ---
+hal_camera_default default_prop file read  # unset ro.build.PDA / ro.camera.{req,res}.fmq.size: no platform labels them, bionic answers "not set", the HAL takes its defaults (22 Oct: video and stills work, kabul.sh kamera=*)
+hal_audio_default omr_file dir search  # Samsung audio HAL looking for /omr (OMC region data of the stock firmware); LineageOS has no /omr content either and refuses the same way, audio plays and records
+isolated_app app_data_file file setattr  # Chrome/WebView renderer (ThreadPoolForeg) chmod on manifest.json / verified_contents.json: AOSP never lets an isolated process write the app's files; the browser keeps working
+system_server priv_app unix_stream_socket getopt  # getsockopt on a socket fd an app handed to system_server over binder; refused on mica and LineageOS alike, nothing visible fails
+system_server isolated_compute_app unix_stream_socket getopt  # same, from an isolated compute process
+untrusted_app_34 proc_version file read  # Home Assistant companion (uid 1010414) reading /proc/version: AOSP refuses /proc/version to apps targeting API 29+ (untrusted_app_29 and later), mica and LineageOS alike; the app falls back (24 Oct 2026, kanit/20261024-0649)
+untrusted_app proc_version file read  # same /proc/version probe from an untrusted_app targeting API 35+; AOSP refuses on mica and LineageOS alike
+untrusted_app cgroup dir search  # app probing cgroup hierarchy; refused on mica and LineageOS alike
+untrusted_app cgroup_v2 dir search  # app probing cgroup_v2 hierarchy; refused on mica and LineageOS alike
+untrusted_app sysfs_net dir search  # app probing /sys/class/net; MAC/interface sysfs is hidden from apps on mica and LineageOS alike
+untrusted_app untrusted_app netlink_route_socket nlmsg_readpriv  # app netlink_route_socket RTM_GETLINK probe; privileged netlink info is hidden from apps since Android 11 on both platforms
+untrusted_app_34 media_rw_data_file file relabelfrom  # app attempting to relabel a file on /data/media; AOSP never grants relabelfrom to untrusted apps on either platform
+untrusted_app_34 proc_tty_drivers file read  # app root/emulator detection probe reading /proc/tty/drivers; refused on both platforms
+untrusted_app_34 sysfs_net dir read  # app enumerating /sys/class/net; refused on both platforms

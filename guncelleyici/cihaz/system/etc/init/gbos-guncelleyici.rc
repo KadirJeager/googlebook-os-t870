@@ -1,0 +1,32 @@
+# Googlebook OS updater (T870-araclar/guncelleyici, BENIOKU.md).
+#   gbos_guncelleyicid  the service the "Sistem güncellemesi" app and gbos-guncelleyici talk to
+#   gbos_bekci          the boot guard: every boot, as soon as /data is mounted
+# Both run as root in the gbos_guncelleyici domain; the groups reach recovery's command file
+# directory (/cache/recovery, system:cache 0770) and packages.list (system:package_info 0640)
+# without dac_override.
+on post-fs-data
+    mkdir /data/gbos-ota 0700 root root encryption=Require
+    mkdir /data/gbos-ota/gelen 0700 root root
+    mkdir /data/gbos-ota/motor 0700 root root
+    mkdir /cache/gbos 0700 root root
+    # recovery writes deneme/sonuc/kurulum.log here without SELinux labels (unlabeled); the guard
+    # may not read unlabeled files, so they get gbos_ota_cache_file before it starts (24 Oct 2026:
+    # status stuck at "kuruluyor" after the first real update). --force: restorecon otherwise
+    # skips a directory whose stored file_contexts digest is unchanged, and the files recovery
+    # added since the last boot stay unlabeled (seen on the second update, 24 Oct 2026)
+    restorecon_recursive --force /cache/gbos
+    start gbos_bekci
+
+service gbos_bekci /system/bin/gbos-guncelleyici-is bekci
+    user root
+    group root cache package_info
+    oneshot
+    disabled
+    seclabel u:r:gbos_guncelleyici:s0
+
+service gbos_guncelleyicid /system/bin/gbos-guncelleyicid
+    class main
+    user root
+    group root cache package_info
+    socket gbos_guncelleyici stream 0666 root root
+    seclabel u:r:gbos_guncelleyici:s0

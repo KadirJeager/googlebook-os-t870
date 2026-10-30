@@ -1,0 +1,321 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: KadirJeager <KadirJeager@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 22:00:00 +0300
+Subject: [PATCH] input: pogo: report the folded-back cover as SW_TABLET_MODE
+
+The Book Cover Keyboard MCU reports the cover position with
+POGO_NOTIFIER_EVENTID_HALL: E_LID_0 (closed over the screen),
+E_LID_NORMAL (open) and E_LID_360 (folded behind the screen).
+hall_logical only handled the first two and dropped E_LID_360, so a
+folded-back cover still looked like a laptop: no tablet-mode switch,
+and the keyboard and touchpad stayed registered and kept delivering
+input from under the device.
+
+The stock Samsung driver reports E_LID_360 with the vendor switch
+SW_HALL_LOGICAL for its own framework. Report it with the standard
+SW_TABLET_MODE instead, the same way this tree already maps the stock
+SW_FLIP to SW_LID:
+
+ - hall_logical: E_LID_360 sets LOGICAL_HALL_BACK and SW_TABLET_MODE=1;
+   E_LID_0/E_LID_NORMAL and detach clear it. SW_LID is now derived from
+   the CLOSE state only, so a folded-back cover no longer turns into
+   SW_LID=1 when the input device is reopened.
+ - keyboard/touchpad: on E_LID_360 release everything and unregister the
+   input device exactly as on detach; register it again when the cover
+   leaves the back position. A re-sent ATTACHED while folded back does
+   not bring them back, detach clears the state.
+
+The lid positions move to pogo_i2c_notifier.h so every listener shares
+one definition.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/input/keyboard/hall_ic_logical.c      | 46 +++++++++------
+ .../stm/stm32l0/stm32_pogo_keyboard.c         | 56 ++++++++++++++++---
+ .../stm/stm32l0/stm32_pogo_touchpad.c         | 53 +++++++++++++++---
+ include/linux/input/pogo_i2c_notifier.h       | 10 ++++
+ 4 files changed, 133 insertions(+), 32 deletions(-)
+
+diff --git a/drivers/input/keyboard/hall_ic_logical.c b/drivers/input/keyboard/hall_ic_logical.c
+index 924c3954d..efdc9d3a9 100644
+--- a/drivers/input/keyboard/hall_ic_logical.c
++++ b/drivers/input/keyboard/hall_ic_logical.c
+@@ -25,12 +25,6 @@
+ #include <linux/sec_class.h>
+ #include "stm/stm32l0/stm32_pogo_i2c.h"
+ 
+-enum LID_POSITION {
+-	E_LID_0 = 1,
+-	E_LID_NORMAL = 2,
+-	E_LID_360 = 3,
+-};
+-
+ enum LOGICAL_HALL_STATUS
+ {
+ 	LOGICAL_HALL_OPEN = 0,
+@@ -61,11 +55,27 @@ static ssize_t hall_logical_detect_show(struct device *dev,
+ }
+ static DEVICE_ATTR(hall_logical_detect, 0444, hall_logical_detect_show, NULL);
+ 
+-static int hall_logical_open(struct input_dev *input)
++/*
++ * The logical hall state maps onto two standard switches:
++ *   CLOSE (cover over the screen)   -> SW_LID = 1
++ *   BACK  (cover folded behind it)  -> SW_TABLET_MODE = 1
++ *   OPEN  (laptop position, or no cover attached) -> both 0
++ * The stock driver reports the folded-back state with the vendor switch
++ * SW_HALL_LOGICAL that only the vendor framework understands;
++ * SW_TABLET_MODE is the switch Android's InputManager tracks.
++ */
++static void hall_logical_report(struct input_dev *input)
+ {
+-	/* Report current state of buttons that are connected to GPIOs */
+-	input_report_switch(input, SW_LID, hall_logical_status);
++	input_report_switch(input, SW_LID,
++			hall_logical_status == LOGICAL_HALL_CLOSE);
++	input_report_switch(input, SW_TABLET_MODE,
++			hall_logical_status == LOGICAL_HALL_BACK);
+ 	input_sync(input);
++}
++
++static int hall_logical_open(struct input_dev *input)
++{
++	hall_logical_report(input);
+ 
+ 	return 0;
+ }
+@@ -91,8 +101,7 @@ static int logical_hallic_notifier_handler(struct notifier_block *nb,
+ 	switch (action) {
+ 	case POGO_NOTIFIER_ID_DETACHED:
+ 		hall_logical_status = LOGICAL_HALL_OPEN;
+-		input_report_switch(logical_hall_dev->input, SW_LID, hall_logical_status);
+-		input_sync(logical_hall_dev->input);
++		hall_logical_report(logical_hall_dev->input);
+ 		break;
+ 	case POGO_NOTIFIER_EVENTID_HALL:
+ 		if (pogo_data.size != 1) {
+@@ -105,15 +114,17 @@ static int logical_hallic_notifier_handler(struct notifier_block *nb,
+ 		if (hall_status == E_LID_0) {
+ 			hall_logical_status = LOGICAL_HALL_CLOSE;
+ 			input_info(true, &logical_hall_dev->input->dev, "%s hall_status = %d (CLOSE)\n", __func__, hall_status);
+-			input_report_switch(logical_hall_dev->input, SW_LID, hall_logical_status);
+-			input_sync(logical_hall_dev->input);
+ 		} else if (hall_status == E_LID_NORMAL) {
+ 			hall_logical_status = LOGICAL_HALL_OPEN;
+ 			input_info(true, &logical_hall_dev->input->dev, "%s hall_status = %d (NORMAL)\n", __func__, hall_status);
+-			input_report_switch(logical_hall_dev->input, SW_LID, hall_logical_status);
+-			input_sync(logical_hall_dev->input);
++		} else if (hall_status == E_LID_360) {
++			hall_logical_status = LOGICAL_HALL_BACK;
++			input_info(true, &logical_hall_dev->input->dev, "%s hall_status = %d (BACK)\n", __func__, hall_status);
++		} else {
++			input_err(true, &logical_hall_dev->input->dev, "%s unknown hall_status = %d\n", __func__, hall_status);
++			break;
+ 		}
+-		
++		hall_logical_report(logical_hall_dev->input);
+ 		break;
+ 	};
+ 
+@@ -163,6 +174,7 @@ static int hall_logical_probe(struct platform_device *pdev)
+ 
+ 	input->evbit[0] |= BIT_MASK(EV_SW);
+ 	input_set_capability(input, EV_SW, SW_LID);
++	input_set_capability(input, EV_SW, SW_TABLET_MODE);
+ 
+ 	input->open = hall_logical_open;
+ 	input->close = hall_logical_close;
+@@ -193,7 +205,7 @@ static int hall_logical_probe(struct platform_device *pdev)
+ 	pogo_notifier_register(&ddata->pogo_nb,
+ 			logical_hallic_notifier_handler, POGO_NOTIFY_DEV_HALLIC);
+ 
+-	input_report_switch(input, SW_LID, hall_logical_status);
++	hall_logical_report(input);
+ 
+ 	pr_info("%s end", __func__);
+ 	return 0;
+diff --git a/drivers/input/keyboard/stm/stm32l0/stm32_pogo_keyboard.c b/drivers/input/keyboard/stm/stm32l0/stm32_pogo_keyboard.c
+index e03af876b..3b2c58506 100644
+--- a/drivers/input/keyboard/stm/stm32l0/stm32_pogo_keyboard.c
++++ b/drivers/input/keyboard/stm/stm32l0/stm32_pogo_keyboard.c
+@@ -67,6 +67,7 @@ struct stm32_keypad_dev {
+ 	struct stm32_keypad_dtdata		*dtdata;
+ 	int					*key_state;
+ 	struct notifier_block			pogo_nb;
++	bool					folded_back;
+ 	char					key_name[714][10];
+ };
+ 
+@@ -428,6 +429,47 @@ static int stm32_keypad_set_input_dev(struct stm32_keypad_dev *device_data, int
+ 	return ret;
+ }
+ 
++static void stm32_keypad_unset_input_dev(struct stm32_keypad_dev *stm32)
++{
++	stm32_release_all_key(stm32);
++	if (stm32->input_dev) {
++		input_unregister_device(stm32->input_dev);
++		stm32->input_dev = NULL;
++		input_info(true, &stm32->pdev->dev, "%s: input dev unregistered\n", __func__);
++	}
++}
++
++/*
++ * With the cover folded behind the screen (E_LID_360) the keys face the desk
++ * or the user's lap. The keyboard leaves the input subsystem exactly as on
++ * detach, so the system sees a slate without a hardware keyboard, and comes
++ * back when the cover is folded to the front or closed over the screen.
++ */
++static void stm32_kpd_hall_event(struct stm32_keypad_dev *stm32,
++		const struct pogo_data_struct *pogo_data)
++{
++	if (pogo_data->size != 1 || !pogo_data->data)
++		return;
++
++	switch (pogo_data->data[0]) {
++	case E_LID_360:
++		if (stm32->folded_back)
++			return;
++		stm32->folded_back = true;
++		input_info(true, &stm32->pdev->dev, "%s: folded back\n", __func__);
++		stm32_keypad_unset_input_dev(stm32);
++		break;
++	case E_LID_0:
++	case E_LID_NORMAL:
++		if (!stm32->folded_back)
++			return;
++		stm32->folded_back = false;
++		input_info(true, &stm32->pdev->dev, "%s: unfolded\n", __func__);
++		stm32_keypad_set_input_dev(stm32, pogo_data->module_id);
++		break;
++	}
++}
++
+ static int stm32_kpd_pogo_notifier(struct notifier_block *nb,
+ 		unsigned long action, void *data)
+ {
+@@ -438,15 +480,15 @@ static int stm32_kpd_pogo_notifier(struct notifier_block *nb,
+ 
+ 	switch (action) {
+ 	case POGO_NOTIFIER_ID_ATTACHED:
+-		stm32_keypad_set_input_dev(stm32, pogo_data.module_id);
++		if (!stm32->folded_back)
++			stm32_keypad_set_input_dev(stm32, pogo_data.module_id);
+ 		break;
+ 	case POGO_NOTIFIER_ID_DETACHED:
+-		stm32_release_all_key(stm32);
+-		if (stm32->input_dev) {
+-			input_unregister_device(stm32->input_dev);
+-			stm32->input_dev = NULL;
+-			input_info(true, &stm32->pdev->dev, "%s: input dev unregistered\n", __func__);
+-		}
++		stm32->folded_back = false;
++		stm32_keypad_unset_input_dev(stm32);
++		break;
++	case POGO_NOTIFIER_EVENTID_HALL:
++		stm32_kpd_hall_event(stm32, &pogo_data);
+ 		break;
+ 	case POGO_NOTIFIER_ID_RESET:
+ 		stm32_release_all_key(stm32);
+diff --git a/drivers/input/keyboard/stm/stm32l0/stm32_pogo_touchpad.c b/drivers/input/keyboard/stm/stm32l0/stm32_pogo_touchpad.c
+index f8af0a7cb..f39b61e86 100644
+--- a/drivers/input/keyboard/stm/stm32l0/stm32_pogo_touchpad.c
++++ b/drivers/input/keyboard/stm/stm32l0/stm32_pogo_touchpad.c
+@@ -132,6 +132,7 @@ struct stm32_touchpad_dev {
+ 
+ 	struct stm32_touchpad_dtdata		*dtdata;
+ 	struct notifier_block			pogo_nb;
++	bool					folded_back;
+ 
+ 	struct stm32_point_data			prev_touch_info;
+ 	int					move_count[STM32_TOUCH_MAX_FINGER_NUM];
+@@ -686,6 +687,44 @@ static int stm32_touchpad_set_input_dev(struct stm32_touchpad_dev *device_data)
+ 	return ret;
+ }
+ 
++static void stm32_touchpad_unset_input_dev(struct stm32_touchpad_dev *stm32)
++{
++	stm32_release_all_finger(stm32);
++	if (stm32->input_dev) {
++		input_unregister_device(stm32->input_dev);
++		stm32->input_dev = NULL;
++		input_info(true, &stm32->pdev->dev,
++				"%s: input dev unregistered\n", __func__);
++	}
++}
++
++/* Same as the keyboard: no touchpad while the cover is folded back. */
++static void stm32_touchpad_hall_event(struct stm32_touchpad_dev *stm32,
++		const struct pogo_data_struct *pogo_data)
++{
++	if (pogo_data->size != 1 || !pogo_data->data)
++		return;
++
++	switch (pogo_data->data[0]) {
++	case E_LID_360:
++		if (stm32->folded_back)
++			return;
++		stm32->folded_back = true;
++		input_info(true, &stm32->pdev->dev, "%s: folded back\n", __func__);
++		stm32_touchpad_unset_input_dev(stm32);
++		break;
++	case E_LID_0:
++	case E_LID_NORMAL:
++		if (!stm32->folded_back)
++			return;
++		stm32->folded_back = false;
++		input_info(true, &stm32->pdev->dev, "%s: unfolded\n", __func__);
++		if (pogo_data->module_id != 1)
++			stm32_touchpad_set_input_dev(stm32);
++		break;
++	}
++}
++
+ static int stm32_touchpad_pogo_notifier(struct notifier_block *nb,
+ 		unsigned long action, void *data)
+ {
+@@ -695,17 +734,15 @@ static int stm32_touchpad_pogo_notifier(struct notifier_block *nb,
+ 	mutex_lock(&stm32->dev_lock);
+ 	switch (action) {
+ 	case POGO_NOTIFIER_ID_ATTACHED:
+-		if (pogo_data.module_id != 1)
++		if (pogo_data.module_id != 1 && !stm32->folded_back)
+ 			stm32_touchpad_set_input_dev(stm32);
+ 		break;
+ 	case POGO_NOTIFIER_ID_DETACHED:
+-		stm32_release_all_finger(stm32);
+-		if (stm32->input_dev) {
+-			input_unregister_device(stm32->input_dev);
+-			stm32->input_dev = NULL;
+-			input_info(true, &stm32->pdev->dev,
+-					"%s: input dev unregistered\n", __func__);
+-		}
++		stm32->folded_back = false;
++		stm32_touchpad_unset_input_dev(stm32);
++		break;
++	case POGO_NOTIFIER_EVENTID_HALL:
++		stm32_touchpad_hall_event(stm32, &pogo_data);
+ 		break;
+ 	case POGO_NOTIFIER_ID_RESET:
+ 		stm32_release_all_finger(stm32);
+diff --git a/include/linux/input/pogo_i2c_notifier.h b/include/linux/input/pogo_i2c_notifier.h
+index 37a7b4974..f350037e6 100644
+--- a/include/linux/input/pogo_i2c_notifier.h
++++ b/include/linux/input/pogo_i2c_notifier.h
+@@ -32,6 +32,16 @@ typedef enum {
+ 	POGO_NOTIFIER_ID_RESET,
+ } pogo_notifier_id_t;
+ 
++/*
++ * Payload of POGO_NOTIFIER_EVENTID_HALL: the cover position the keyboard MCU
++ * reports, one byte.
++ */
++enum pogo_lid_position {
++	E_LID_0 = 1,		/* cover closed over the screen */
++	E_LID_NORMAL = 2,	/* cover open, keyboard in front of the screen */
++	E_LID_360 = 3,		/* cover folded behind the screen */
++};
++
+ #define SET_POGO_NOTIFIER_BLOCK(nb, fn, dev) do {	\
+ 		(nb)->notifier_call = (fn);		\
+ 		(nb)->priority = (dev);			\
