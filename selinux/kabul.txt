@@ -140,3 +140,6 @@ untrusted_app untrusted_app netlink_route_socket nlmsg_readpriv  # app netlink_r
 untrusted_app_34 media_rw_data_file file relabelfrom  # app attempting to relabel a file on /data/media; AOSP never grants relabelfrom to untrusted apps on either platform
 untrusted_app_34 proc_tty_drivers file read  # app root/emulator detection probe reading /proc/tty/drivers; refused on both platforms
 untrusted_app_34 sysfs_net dir read  # app enumerating /sys/class/net; refused on both platforms
+
+# --- 31 Oct 2026 from-scratch install (H, cihaz-kabul/kanit/20261031-0312-h): both refuse these too ---
+snapshotservice snapshotservice_data_file dir create  # ART's runtime app image (oat_primary) on an app's first start; mica's policy refuses it as well, ART runs the app without it

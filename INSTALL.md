@@ -4,8 +4,10 @@ You build the system on a Linux computer from Google's Googlebook OS release and
 LineageOS build, then write it to the tablet from LineageOS recovery. Read the whole guide
 first. Installing erases the tablet's data.
 
-Status: the tools are what the author's tablet runs. The install from a stock tablet described
-here has not yet been carried out end to end on a second tablet; report what you find.
+Status: on 31 October 2026 this guide was followed end to end from a fresh clone, with new
+keys and Google's then current release (.276), on a tablet wiped back to LineageOS 24.0: it
+booted Googlebook OS and passed the acceptance checks (`cihaz-kabul/kabul.sh`, no failures).
+Section 2 (stock firmware to LineageOS) is LineageOS's own procedure. Report what you find.
 
 ## 1. What you need
 
@@ -114,6 +116,11 @@ python3 ilk-kurulum.py
 It writes Googlebook OS's system, system_ext and product into super (with the Googlebook OS
 header), then the patched boot and the recovery, and reads each back. Then, on the tablet:
 **Factory reset > Format data**, and **Reboot system now**. The first boot takes a few minutes.
+
+Optional: Google's apps keep some Googlebook features (Quick Look, the ALAI/Loam smart
+collections, the Gemini/Search/ASI shortcuts, Pixel live wallpapers) off by Google's server
+flags. `telefon-merkezi/bayrak/fmd-bayraklari.sh` overrides those flags over rooted ADB once
+you are signed in and online (`telefon-merkezi/bayrak/BENIOKU.md`).
 
 ## 5. Updates
 

@@ -227,7 +227,11 @@ grep -q "com.google.android.desktop.contextualtools/.entrypoints.ProcessTextGate
     && grep -q "com.google.android.googlequicksearchbox/com.google.android.apps.search.assistant.verticals.snapshot.widgets.weather.WeatherWidget_Receiver" "$OUT/masaustu-ai.txt" \
     && [ "$(tail -1 "$OUT/masaustu-ai.txt" | tr -d '\r')" = 1 ] \
     && result OK masaustu-ai "Quick Look, ALAI/Loam, ContextualCursor, ASI SafeComms ve GSA Weather açık" \
-    || result HATA masaustu-ai "Masaüstü AI bileşenlerinden biri kapalı (masaustu-ai.txt)"
+    || if [ -n "$(SH 'ls /data/local/tmp/bayrak.uygulandi 2>/dev/null')" ]; then
+        result HATA masaustu-ai "Masaüstü AI bileşenlerinden biri kapalı (masaustu-ai.txt)"
+    else  # Google's apps switch these off by its server flags until fmd-bayraklari.sh overrides them
+        result BAK masaustu-ai "isteğe bağlı gizli özellikler açılmadı (telefon-merkezi/bayrak/fmd-bayraklari.sh)"
+    fi
 
 # --- Terminal (terminal/CIHAZ-TESTI.md A, 11)--------------------------------------------------
 SH 'ps -AZ | grep gbos-linuxd; ls -laZ /dev/socket/gbos_linux /data/gbos-linux; gbos-linux status' > "$OUT/terminal.txt"

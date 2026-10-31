@@ -79,6 +79,7 @@ avc: denied { create } for scontext=u:r:gbos_linuxd:s0 tcontext=u:object_r:gbos_
 avc: denied { create } for scontext=u:r:gbos_linuxd:s0 tcontext=u:object_r:gbos_linuxd:s0 tclass=anon_inode
 avc: denied { create } for scontext=u:r:gbos_linuxd:s0 tcontext=u:r:gbos_linuxd:s0 tclass=tcp_socket
 avc: denied { create } for scontext=u:r:netd:s0 tcontext=u:object_r:proc_net:s0 tclass=file
+avc: denied { create } for scontext=u:r:snapshotservice:s0 tcontext=u:object_r:snapshotservice_data_file:s0 tclass=dir
 avc: denied { create } for scontext=u:r:snapshotservice:s0 tcontext=u:object_r:snapshotservice_data_file:s0 tclass=file
 avc: denied { create } for scontext=u:r:su:s0 tcontext=u:object_r:shell_data_file:s0 tclass=file
 avc: denied { create } for scontext=u:r:vendor_init-qti-dcvs-sh:s0 tcontext=u:object_r:vendor_sysfs_devfreq:s0 tclass=file
@@ -461,6 +462,7 @@ avc: denied { getattr } for scontext=u:r:isolated_compute_app:s0:c522,c768 tcont
 avc: denied { getattr } for scontext=u:r:mediacodec:s0 tcontext=u:object_r:system_file:s0 tclass=file
 avc: denied { getattr } for scontext=u:r:mediaprovider_app:s0:c245,c256,c512,c768 tcontext=u:object_r:shell_data_file:s0 tclass=dir
 avc: denied { getattr } for scontext=u:r:mediaprovider_app:s0:c245,c256,c522,c768 tcontext=u:object_r:shell_data_file:s0 tclass=dir
+avc: denied { getattr } for scontext=u:r:mediaprovider_app:s0:c3,c257,c522,c768 tcontext=u:object_r:shell_data_file:s0 tclass=dir
 avc: denied { getattr } for scontext=u:r:priv_app:s0:c512,c768 tcontext=u:object_r:vendor_default_prop:s0 tclass=file
 avc: denied { getattr } for scontext=u:r:priv_app:s0:c522,c768 tcontext=u:object_r:metadata_file:s0 tclass=dir
 avc: denied { getattr } for scontext=u:r:priv_app:s0:c522,c768 tcontext=u:object_r:vendor_default_prop:s0 tclass=file
@@ -1907,6 +1909,7 @@ avc: denied { search } for scontext=u:r:hal_lineage_touch_default:s0 tcontext=u:
 avc: denied { search } for scontext=u:r:logd:s0 tcontext=u:object_r:misc_logd_file:s0 tclass=dir
 avc: denied { search } for scontext=u:r:mediaprovider_app:s0:c245,c256,c512,c768 tcontext=u:object_r:shell_data_file:s0 tclass=dir
 avc: denied { search } for scontext=u:r:mediaprovider_app:s0:c245,c256,c522,c768 tcontext=u:object_r:shell_data_file:s0 tclass=dir
+avc: denied { search } for scontext=u:r:mediaprovider_app:s0:c3,c257,c522,c768 tcontext=u:object_r:shell_data_file:s0 tclass=dir
 avc: denied { search } for scontext=u:r:platform_app:s0:c512,c768 tcontext=u:object_r:system_data_file:s0:c522,c768 tclass=dir
 avc: denied { search } for scontext=u:r:priv_app_36:s0:c512,c768 tcontext=u:object_r:gbos_linux_data_file:s0 tclass=dir
 avc: denied { search } for scontext=u:r:su:s0 tcontext=u:object_r:apex_art_data_file:s0 tclass=dir
