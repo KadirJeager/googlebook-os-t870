@@ -10,6 +10,9 @@ tools patch and repackage them on your computer, and you install the result on y
 
 **Install:** [INSTALL.md](INSTALL.md).
 
+**Not maintained.** The author has moved on and will not follow new Googlebook OS releases; a
+future release may need changes to the patches. Issues, pull requests and forks are welcome.
+
 ## What works
 
 Measured on the author's tablet with `cihaz-kabul/kabul.sh` (42 checks) and by hand:
