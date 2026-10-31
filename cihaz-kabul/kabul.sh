@@ -229,8 +229,9 @@ grep -q "com.google.android.desktop.contextualtools/.entrypoints.ProcessTextGate
     && result OK masaustu-ai "Quick Look, ALAI/Loam, ContextualCursor, ASI SafeComms ve GSA Weather açık" \
     || if [ -n "$(SH 'ls /data/local/tmp/bayrak.uygulandi 2>/dev/null')" ]; then
         result HATA masaustu-ai "Masaüstü AI bileşenlerinden biri kapalı (masaustu-ai.txt)"
-    else  # Google's apps switch these off by its server flags until fmd-bayraklari.sh overrides them
-        result BAK masaustu-ai "isteğe bağlı gizli özellikler açılmadı (telefon-merkezi/bayrak/fmd-bayraklari.sh)"
+    else  # Google's apps switch these off by its server flags until they are overridden on the
+          # device (the author's telefon-merkezi/bayrak tool, not part of the published tools)
+        result BAK masaustu-ai "Google sunucu bayraklarıyla kapalı, isteğe bağlı (bayrak override'ı uygulanmadı)"
     fi
 
 # --- Terminal (terminal/CIHAZ-TESTI.md A, 11)--------------------------------------------------

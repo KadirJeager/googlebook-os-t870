@@ -117,11 +117,6 @@ It writes Googlebook OS's system, system_ext and product into super (with the Go
 header), then the patched boot and the recovery, and reads each back. Then, on the tablet:
 **Factory reset > Format data**, and **Reboot system now**. The first boot takes a few minutes.
 
-Optional: Google's apps keep some Googlebook features (Quick Look, the ALAI/Loam smart
-collections, the Gemini/Search/ASI shortcuts, Pixel live wallpapers) off by Google's server
-flags. `telefon-merkezi/bayrak/fmd-bayraklari.sh` overrides those flags over rooted ADB once
-you are signed in and online (`telefon-merkezi/bayrak/BENIOKU.md`).
-
 ## 5. Updates
 
 Settings > System > System update. The tablet finds a new Googlebook OS release itself,
